@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] — 2026-11-23
+
+### Security
+
+- The daemon now refuses control commands from the installing user while
+  another user owns the active session on the device's seat, and releases the
+  grab within a second when the seat switches. This closes the shared-computer
+  case where a lingering process of the previous account could convert the new
+  user's pointer movement into scrolling. `root` can still control the daemon;
+  the guard is built in and cannot be disabled from the user config.
+
+### Changed
+
+- `install.sh` no longer installs `python-evdev` with pacman. It checks for the
+  module and stops with the exact command; the README lists it as a dependency.
+
 ## [1.3.0] — 2026-11-23
 
 ### Added

@@ -192,6 +192,46 @@ def main():
 
     print("tap/hold: ok")
 
+    # -- shared computer: only the active owner may control -----------------
+    class FakeSeatGuard:
+        def __init__(self, value):
+            self.value = value
+
+        def active(self, seat):
+            return self.value
+
+    daemon = fresh("scroll")
+    daemon.seat_guard = FakeSeatGuard(("2", 2000))
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "pointer", daemon.mode
+
+    daemon = fresh("scroll")
+    daemon.seat_guard = FakeSeatGuard(("1", 1000))
+    daemon.last_seat_check = 0.0
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "scroll", daemon.mode
+
+    daemon = fresh("scroll")
+    daemon.seat_guard = FakeSeatGuard(None)
+    daemon.last_seat_check = 0.0
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "pointer", daemon.mode
+    print("seat switch releases the grab: ok")
+
+    daemon = fresh("pointer")
+    daemon.seat_guard = FakeSeatGuard(("1", 1000))
+    assert daemon.command_allowed(1000) == (True, "")
+    assert daemon.command_allowed(0) == (True, "")
+    ok, reason = daemon.command_allowed(2000)
+    assert not ok and "owning user" in reason, reason
+    daemon.seat_guard = FakeSeatGuard(("2", 2000))
+    ok, reason = daemon.command_allowed(1000)
+    assert not ok and "active session" in reason, reason
+    daemon.seat_guard = FakeSeatGuard(None)
+    ok, reason = daemon.command_allowed(1000)
+    assert not ok and "cannot verify" in reason, reason
+    print("seat guard decisions: ok")
+
     print("frame path: ok")
     return 0
 

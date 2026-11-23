@@ -36,11 +36,18 @@ settings on a left click.
 ## Requirements
 
 - Omarchy (Hyprland + the Quickshell bar).
-- Arch `python-evdev` (the installer adds it if missing).
+- Arch `python-evdev`: `sudo pacman -S --needed python-evdev`.
 - Root once at install time: the daemon reads `/dev/input/event*` and creates a
   `uinput` device.
 
 ## Install
+
+The only dependency beyond Omarchy is `python-evdev`. Install it once; the
+installer checks for it and never installs packages itself:
+
+```sh
+sudo pacman -S --needed python-evdev
+```
 
 The repository **is** the plugin: `manifest.json` sits at the root, so Omarchy
 can install and update it like any other plugin.
@@ -110,6 +117,8 @@ The script elevates once (via `sudo` by default, or `SCROLLMODE_ELEVATE=pkexec
   uses; disabling or removing the plugin takes it out again.
 - Installs the daemon, the CLI and a systemd unit under `/usr/local` and
   `/etc` (with sudo, from the visible installer).
+- Does not install packages: if `python-evdev` is missing it stops and prints
+  the pacman command above.
 
 Nothing else is touched. Uninstall reverses all of it and keeps your settings
 file.
@@ -306,6 +315,16 @@ omarchy-scrollmode (CLI) ──unix socket──▶ scrollmoded
   converter to the sniper multiplier only while held and is not replayed.
 - Device names and the device list come from `/run/udev/data` plus HID++ 2.0
   `DeviceName` (`0x0005`) over the receiver's hidraw interface.
+
+### Shared computers
+
+The control socket belongs to the installing user, and the daemon accepts
+commands only while that user owns the active session on the device's seat
+(`seat0` on a normal desktop). When another user takes over the seat, a running
+scroll mode is released within a second, so a lingering process of the previous
+account cannot turn the new user's pointer movement into scrolling. `root` can
+still control the daemon directly. This check is built into the daemon and
+cannot be disabled from the user config.
 
 ## Troubleshooting
 

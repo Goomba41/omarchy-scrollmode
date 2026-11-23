@@ -16,6 +16,7 @@ is mirrored into a small file the bar widget watches.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import errno
 import fcntl
 import glob
@@ -39,7 +40,7 @@ try:
     from evdev import ecodes
 except ImportError:  # pragma: no cover - reported before anything else runs
     sys.stderr.write(
-        "scrollmoded: python-evdev is missing (install it with: omarchy pkg add python-evdev)\n"
+        "scrollmoded: python-evdev is missing; install it first (see README: Requirements)\n"
     )
     raise SystemExit(1)
 
@@ -243,6 +244,7 @@ def scan_pointers(excluded: list[str]) -> tuple[list[dict], int]:
                     "name": pretty_device_name(props, name),
                     "raw": name,
                     "path": path,
+                    "seat": props.get("ID_SEAT") or "seat0",
                 }
             )
         finally:
@@ -575,6 +577,68 @@ class ScrollConverter:
         return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
 
 
+class SeatGuard:
+    """Which user owns the active session on the seat we are about to grab.
+
+    libsystemd is used directly: sd_pid_get_session() is not usable here because
+    uwsm keeps the compositor outside the session-N.scope, but sd_seat_get_active()
+    answers the only question that matters - is the installing user the one
+    sitting at this seat right now.
+    """
+
+    def __init__(self) -> None:
+        self._lib = None
+        self._load_failed = False
+        self._warned = False
+        self._libc = None
+
+    def _load(self):
+        if self._lib is not None or self._load_failed:
+            return self._lib
+        try:
+            lib = ctypes.CDLL("libsystemd.so.0", use_errno=True)
+            lib.sd_seat_get_active.argtypes = [
+                ctypes.c_char_p,
+                ctypes.POINTER(ctypes.c_char_p),
+                ctypes.POINTER(ctypes.c_uint),
+            ]
+            lib.sd_seat_get_active.restype = ctypes.c_int
+            try:
+                libc = ctypes.CDLL("libc.so.6", use_errno=True)
+                libc.free.argtypes = [ctypes.c_void_p]
+                libc.free.restype = None
+                self._libc = libc
+            except (OSError, AttributeError):
+                self._libc = None
+            self._lib = lib
+        except (OSError, AttributeError):
+            self._load_failed = True
+        return self._lib
+
+    def active(self, seat: str) -> tuple[str, int] | None:
+        """The active (session, uid) on the seat, or None when unknown."""
+        lib = self._load()
+        if lib is None:
+            if not self._warned:
+                log("libsystemd is unavailable; the session guard cannot verify the seat")
+                self._warned = True
+            return None
+        session = ctypes.c_char_p()
+        uid = ctypes.c_uint()
+        try:
+            result = lib.sd_seat_get_active(
+                seat.encode("utf-8"), ctypes.byref(session), ctypes.byref(uid)
+            )
+        except OSError:
+            return None
+        value = session.value.decode("utf-8", "replace") if session.value else ""
+        if self._libc is not None:
+            self._libc.free(ctypes.cast(session, ctypes.c_void_p))
+        if result < 0:
+            return None
+        return value, int(uid.value)
+
+
 class DeviceLost(Exception):
     pass
 
@@ -606,6 +670,10 @@ class Daemon:
         self.last_status = ""
         self.last_scan = 0.0
         self.empty_scans = 0
+        self.seat = "seat0"
+        self.seat_guard = SeatGuard()
+        self.last_seat_check = 0.0
+        self.last_denied_log = 0.0
         self.rescan_requested = False
 
         self.sel = selectors.DefaultSelector()
@@ -1020,6 +1088,29 @@ class Daemon:
 
     # -- control socket ----------------------------------------------------
 
+    def command_allowed(self, peer_uid: int) -> tuple[bool, str]:
+        """Only the owner may control the daemon while owning the active seat.
+
+        The socket is already 0600 and owned by the installing user, so the UID
+        check is belt and braces. The seat check is what closes the shared
+        computer case: a lingering process of the previous account is still the
+        same UID, but the seat now belongs to somebody else.
+        """
+        if peer_uid == 0:
+            return True, ""
+        if peer_uid != self.uid:
+            return False, "denied: only the owning user may control the daemon"
+        active = self.seat_guard.active(self.seat)
+        if active is None:
+            return False, f"denied: cannot verify the active session on {self.seat}"
+        session, active_uid = active
+        if active_uid != self.uid:
+            return False, (
+                f"denied: user {active_uid} owns the active session ({session}) "
+                f"on {self.seat}, not {self.uid}"
+            )
+        return True, ""
+
     def handle_command(self, line: str) -> str:
         parts = line.strip().lower().split()
         verb = parts[0] if parts else ""
@@ -1057,6 +1148,26 @@ class Daemon:
             return
         with conn:
             conn.settimeout(0.2)
+            try:
+                creds = conn.getsockopt(
+                    socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")
+                )
+                _pid, peer_uid, _gid = struct.unpack("3i", creds)
+            except OSError:
+                peer_uid = -1
+
+            allowed, reason = self.command_allowed(peer_uid)
+            if not allowed:
+                now = time.monotonic()
+                if now - self.last_denied_log >= 30.0:
+                    self.last_denied_log = now
+                    log(f"control denied for uid {peer_uid}: {reason}")
+                try:
+                    conn.sendall((reason + "\n").encode())
+                except OSError:
+                    pass
+                return
+
             data = b""
             try:
                 while b"\n" not in data and len(data) < 512:
@@ -1079,6 +1190,22 @@ class Daemon:
 
     def tick(self, now: float) -> None:
         self.refresh_status()
+        if self.mode != "pointer" and now - self.last_seat_check >= 1.0:
+            self.last_seat_check = now
+            active = self.seat_guard.active(self.seat)
+            if active is None:
+                log(f"cannot verify the active session on {self.seat}; releasing the grab")
+                self.deactivate()
+                return
+            session, active_uid = active
+            if active_uid != self.uid:
+                log(
+                    f"active session on {self.seat} is now uid {active_uid} "
+                    f"(session {session}); releasing the grab"
+                )
+                self.deactivate()
+                return
+
         if self.reload_pending:
             self.reload_pending = False
             self.reload_config()
@@ -1133,6 +1260,7 @@ class Daemon:
                     self.dev = opened
                     announced_missing = False
                     self.active_id = target["id"]
+                    self.seat = target.get("seat") or "seat0"
                     self.refresh_status(force=True)
                     if self.device_name:
                         self.write_device(self.device_name)

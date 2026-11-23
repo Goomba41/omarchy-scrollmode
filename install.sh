@@ -26,10 +26,8 @@ die() { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
 root_stage() {
   local src="$1" user_uid="$2" user_gid="$3"
 
-  if ! /usr/bin/python3 -c 'import evdev' >/dev/null 2>&1; then
-    say "installing python-evdev"
-    pacman -S --needed --noconfirm python-evdev
-  fi
+  /usr/bin/python3 -c 'import evdev' >/dev/null 2>&1 ||
+    die "python-evdev is required. Install it first: sudo pacman -S --needed python-evdev"
 
   say "installing the daemon and the CLI"
   install -Dm755 "$src/daemon/scrollmoded.py" "$LIB_DIR/scrollmoded.py"
@@ -81,6 +79,8 @@ fi
 [[ $EUID -ne 0 ]] || die "run this as your user, not with sudo (it elevates itself)"
 command -v python3 >/dev/null || die "python3 is required"
 command -v omarchy >/dev/null || die "this installer is for Omarchy"
+/usr/bin/python3 -c 'import evdev' >/dev/null 2>&1 ||
+  die "python-evdev is required. Install it first: sudo pacman -S --needed python-evdev"
 
 ELEVATE="${SCROLLMODE_ELEVATE:-sudo}"
 command -v "$ELEVATE" >/dev/null || die "$ELEVATE is not available"
