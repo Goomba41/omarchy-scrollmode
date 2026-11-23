@@ -32,6 +32,12 @@ All notable changes to this project are documented here. The format follows
   stop. Off by default, and slow movement never triggers it.
 - Panel toggles for inertia and for the sniper button.
 
+### Fixed
+
+- The daemon now forces a rescan when device enumeration unexpectedly comes back
+  empty while a device is open, instead of leaving the widget on "no pointing
+  device" until the service is restarted.
+
 ### Changed
 
 - Left click on the bar widget opens (or closes) the settings panel; right click

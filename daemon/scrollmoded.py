@@ -605,6 +605,7 @@ class Daemon:
         self.active_id = ""
         self.last_status = ""
         self.last_scan = 0.0
+        self.empty_scans = 0
         self.rescan_requested = False
 
         self.sel = selectors.DefaultSelector()
@@ -677,6 +678,17 @@ class Daemon:
 
         excluded = [str(item).lower() for item in self.cfg["device"].get("exclude") or []]
         devices, hidden = scan_pointers(excluded)
+        # An empty list while a device is open is inconsistent: the daemon holds
+        # an event node, but the enumeration skipped everything. A rescan closes
+        # and re-opens the device, which clears the state.
+        if not devices and self.dev is not None:
+            self.empty_scans += 1
+            if self.empty_scans >= 2:
+                self.empty_scans = 0
+                self.rescan_requested = True
+                log("device scan came back empty, rescanning")
+        else:
+            self.empty_scans = 0
         listed = []
         active_name = ""
         for device in devices:
