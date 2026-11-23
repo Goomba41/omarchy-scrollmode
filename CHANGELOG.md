@@ -20,6 +20,9 @@ All notable changes to this project are documented here. The format follows
   **✓ Done** after a successful pick.
 - The Trigger line shows the speed of your last flick, in notches per second,
   so the threshold can be matched to the hand.
+- Optional flick statistics: one JSON line per gesture in
+  `~/scrollmode-flicks.jsonl` with peak/tail speed, timing, settings and raw
+  frames, for tuning the trigger and coast. Off by default; no coordinates.
 
 ### Changed
 

@@ -203,6 +203,12 @@ The line under Trigger shows the speed of your last flick, for example
 `Last flick: 17.4 /s · coast`, so you can compare it with the trigger and tune
 it to your hand.
 
+For longer tuning there is **Flick statistics** (off by default): turn it on in
+the Feel tab or with `omarchy-scrollmode set stats true`. Every gesture then
+appends one JSON line to `~/scrollmode-flicks.jsonl` with its peak and tail
+speed, frame timing, the trigger/coast settings and up to 80 raw frames. The
+file is local only and contains no cursor coordinates.
+
 ### Choosing the device
 
 The **Device** dropdown lists every pointing device (a device with
@@ -263,6 +269,7 @@ button, and the bar icon is dimmed:
   },
 
   "sniper_button": 0,           // spare mouse button code; learn it in the panel
+  "stats": false,               // append flick stats to ~/scrollmode-flicks.jsonl
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
   "hold_max_seconds": 60        // safety cap for a stuck momentary hold

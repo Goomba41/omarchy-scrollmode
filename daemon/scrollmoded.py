@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+from datetime import datetime
 import errno
 import fcntl
 import glob
@@ -118,6 +119,7 @@ DEFAULTS = {
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
+    "stats": False,
 }
 
 
@@ -483,6 +485,15 @@ class ScrollConverter:
         self.report_pending = False
         self.last_peak_notches = 0.0
         self.peak_triggered = False
+        self.gesture_active = False
+        self.gesture_frames = 0
+        self.gesture_first = 0.0
+        self.gesture_total_x = 0
+        self.gesture_total_y = 0
+        self.gesture_samples: list[list[float]] = []
+        self.gesture_peak_counts = 0.0
+        self.gesture_peak_dt = 0.0
+        self.gesture_tail_speed = 0.0
 
     def _pick_axis(self, dx: int, dy: int, now: float) -> str | None:
         if not self.axis_lock:
@@ -569,11 +580,10 @@ class ScrollConverter:
         # A new gesture must not inherit the speed of the previous one. Without
         # this, a slow vertical drag right after a fast horizontal one could
         # coast on the stale horizontal velocity.
-        if previous and now - previous > 0.15:
+        long_pause = bool(previous and now - previous > 0.15)
+        if long_pause:
             self.vel_x = 0.0
             self.vel_y = 0.0
-            self.peak_speed = 0.0
-            self.peak_at = 0.0
             previous = now - 0.016
 
         dt = max(0.001, now - previous) if previous else 0.016
@@ -589,6 +599,21 @@ class ScrollConverter:
             self.vel_x = 0.0
             self.vel_y = 0.0
         self.inertia_active = False
+        new_gesture = self.gesture_reported or not self.gesture_active or long_pause
+        if new_gesture:
+            # A previous gesture may have ended without a coast; never let its
+            # peak trigger or colour the next one.
+            self.peak_speed = 0.0
+            self.peak_at = 0.0
+            self.gesture_active = True
+            self.gesture_frames = 0
+            self.gesture_first = now
+            self.gesture_total_x = 0
+            self.gesture_total_y = 0
+            self.gesture_samples = []
+            self.gesture_peak_counts = 0.0
+            self.gesture_peak_dt = 0.0
+            self.gesture_tail_speed = 0.0
         self.gesture_reported = False
         self.last_motion = now
         self.last_dx = dx
@@ -602,6 +627,17 @@ class ScrollConverter:
         if now - self.peak_at > 0.30 or frame_speed >= self.peak_speed:
             self.peak_speed = frame_speed
             self.peak_at = now
+
+        self.gesture_frames += 1
+        self.gesture_total_x += abs(dx)
+        self.gesture_total_y += abs(dy)
+        self.gesture_tail_speed = frame_speed
+        if frame_speed >= self.gesture_peak_counts:
+            self.gesture_peak_counts = frame_speed
+            self.gesture_peak_dt = dt
+        self.gesture_samples.append([round(dt * 1000.0, 2), dx, dy])
+        if len(self.gesture_samples) > 80:
+            del self.gesture_samples[:-80]
 
         vertical = -dy if not self.invert_v else dy
         horizontal = dx if not self.invert_h else -dx
@@ -645,6 +681,7 @@ class ScrollConverter:
                 return []
             if not self.gesture_reported:
                 self.gesture_reported = True
+                self.gesture_active = False
                 self.last_peak_notches = self.peak_speed / self.counts_per_notch
                 self.peak_triggered = self.peak_speed >= self.inertia_min_speed
                 self.report_pending = True
@@ -757,6 +794,11 @@ class Daemon:
         self.config_path = config_path
         self.uid = uid
         self.gid = gid
+        try:
+            home = pwd.getpwuid(uid).pw_dir
+        except KeyError:
+            home = os.path.expanduser("~")
+        self.stats_path = os.path.join(home, "scrollmode-flicks.jsonl")
         self.cfg = load_config_or_defaults(config_path)
         self.converter = ScrollConverter()
         self.converter.configure(self.cfg)
@@ -1217,6 +1259,45 @@ class Daemon:
             self.last_click_exit = now
             self.deactivate()
 
+    def write_stats(self) -> None:
+        if not self.cfg.get("stats", False):
+            return
+        conv = self.converter
+        now = time.monotonic()
+        data = {
+            "kind": "flick",
+            "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
+            "mode": self.mode,
+            "device": self.device_name or (self.dev.name if self.dev is not None else ""),
+            "activeId": self.active_id,
+            "peak_counts": round(conv.peak_speed, 1),
+            "peak_notches": round(conv.last_peak_notches, 2),
+            "tail_counts": round(conv.gesture_tail_speed, 1),
+            "tail_notches": round(conv.gesture_tail_speed / conv.counts_per_notch, 2),
+            "trigger_notches": round(conv.inertia_trigger, 2),
+            "coasted": bool(conv.peak_triggered),
+            "frames": conv.gesture_frames,
+            "duration_ms": round((conv.last_motion - conv.gesture_first) * 1000.0, 1),
+            "counts_x": conv.gesture_total_x,
+            "counts_y": conv.gesture_total_y,
+            "axis": conv.axis or "both",
+            "frame_ms": round(conv.frame_interval * 1000.0, 2),
+            "guard_ms": round(conv.guard_seconds() * 1000.0, 2),
+            "peak_age_ms": round((now - conv.peak_at) * 1000.0, 1),
+            "peak_frame_ms": round(conv.gesture_peak_dt * 1000.0, 2),
+            "speed": conv.speed,
+            "strength": conv.inertia_strength,
+            "counts_per_notch": conv.counts_per_notch,
+            "samples": conv.gesture_samples,
+        }
+        try:
+            with open(self.stats_path, "a", encoding="utf-8") as handle:
+                handle.write(json.dumps(data, ensure_ascii=False) + "\n")
+            os.chmod(self.stats_path, 0o644)
+            os.chown(self.stats_path, self.uid, self.gid)
+        except OSError as exc:
+            log(f"cannot write {self.stats_path}: {exc}")
+
     def write_inertia(self) -> None:
         data = {
             "peak": round(self.converter.last_peak_notches, 1),
@@ -1239,6 +1320,7 @@ class Daemon:
         if self.converter.report_pending:
             self.converter.report_pending = False
             self.write_inertia()
+            self.write_stats()
         if not events:
             return
         try:
@@ -1806,6 +1888,9 @@ def selftest() -> int:
     print(f"inertia short flick: {coast} hi-res units, peak {converter.last_peak_notches:.1f}/s")
     assert coast < 0, coast
     assert converter.last_peak_notches > 12, converter.last_peak_notches
+    assert converter.gesture_frames == 1, converter.gesture_frames
+    assert converter.gesture_peak_counts > 1200, converter.gesture_peak_counts
+    assert len(converter.gesture_samples) == 1, converter.gesture_samples
 
     print("selftest: ok")
     return 0

@@ -79,5 +79,7 @@
   "tab.feel": "Поведение",
   "tab.device": "Устройство",
   "menu.inertiaLast": "Последний флик: %1 /с",
-  "menu.inertiaCoasted": "докрут"
+  "menu.inertiaCoasted": "докрут",
+  "menu.stats": "Статистика фликов",
+  "help.stats": "Записывать скорость, тайминг и настройки каждого флика в ~/scrollmode-flicks.jsonl. Только локально; полезно для настройки порога инерции."
 }

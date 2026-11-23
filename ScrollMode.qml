@@ -879,6 +879,14 @@ Ui.Panel {
             }
           }
 
+          ToggleRow {
+            visible: root.tab === 1
+            label: strings.t("menu.stats")
+            help: strings.t("help.stats")
+            checked: root.bool("stats")
+            onClicked: root.setValue("stats", !root.bool("stats"))
+          }
+
           Ui.PanelSeparator {
             visible: root.tab === 2
             width: parent.width

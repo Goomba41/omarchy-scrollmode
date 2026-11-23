@@ -79,5 +79,7 @@
   "tab.feel": "Feel",
   "tab.device": "Device",
   "menu.inertiaLast": "Last flick: %1 /s",
-  "menu.inertiaCoasted": "coast"
+  "menu.inertiaCoasted": "coast",
+  "menu.stats": "Flick statistics",
+  "help.stats": "Write each flick's speed, timing and settings to ~/scrollmode-flicks.jsonl. Local only; useful for tuning the inertia trigger."
 }

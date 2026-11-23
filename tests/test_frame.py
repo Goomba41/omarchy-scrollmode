@@ -288,6 +288,29 @@ def main():
             readout = json.load(handle)
         print("inertia readout:", readout)
         assert readout == {"peak": 17.4, "coasted": True}, readout
+
+        stats_path = os.path.join(directory, "flicks.jsonl")
+        daemon.stats_path = stats_path
+        daemon.cfg["stats"] = True
+        converter = daemon.converter
+        converter.peak_speed = 2500.0
+        converter.last_peak_notches = 25.0
+        converter.peak_triggered = True
+        converter.gesture_frames = 3
+        converter.gesture_first = 100.0
+        converter.last_motion = 100.05
+        converter.gesture_total_x = 40
+        converter.gesture_total_y = 0
+        converter.gesture_samples = [[8, 20, 0], [8, 20, 0], [8, 0, 1]]
+        daemon.write_stats()
+        with open(stats_path) as handle:
+            stats = json.loads(handle.readline())
+        print("flick stats:", {k: stats[k] for k in ("kind", "peak_counts", "coasted", "frames")})
+        assert stats["kind"] == "flick"
+        assert stats["peak_counts"] == 2500.0
+        assert stats["coasted"] is True
+        assert stats["frames"] == 3
+        assert len(stats["samples"]) == 3
     finally:
         scrollmoded.INERTIA_PATH = original_path
 
