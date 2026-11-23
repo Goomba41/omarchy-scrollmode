@@ -43,9 +43,21 @@
   "setup.start": "Start…",
   "tip.stopped": "Trackball: service stopped — click to start",
   "menu.inertia": "Inertia (flick to coast)",
-  "menu.sniperButton": "Sniper on side button",
+  "menu.sniperButton": "Sniper on %1 button",
   "mode.pointer": "Pointer",
   "mode.scroll": "Scroll",
   "mode.sniper": "Sniper",
-  "mode.none": "No device"
+  "mode.none": "No device",
+  "button.back": "Back",
+  "button.forward": "Forward",
+  "button.other": "mouse",
+  "help.speed": "How far one ball turn scrolls. 100 % is the calibrated 85 counts per notch; higher is faster.",
+  "help.sniperSpeed": "Sniper scrolls at this share of the normal speed.",
+  "help.smooth": "High-resolution wheel events for smooth scrolling. Turn off for classic, discrete wheel clicks.",
+  "help.axisLock": "Keeps a gesture on the axis it started on, so a vertical scroll does not wobble sideways.",
+  "help.exitOnClick": "Any mouse button returns to pointer mode. Turn off to keep scrolling until you toggle it.",
+  "help.inertia": "After a fast flick the scroll keeps going and slows down. Slow, precise movement does not trigger it.",
+  "help.sniperButton": "Hold the %1 button to scroll at the sniper speed. The button is swallowed while scrolling; hidden when the device has no such button.",
+  "help.hold": "A short tap toggles the mode and keeps it; holding longer engages it only while the keys are held.",
+  "help.autoExit": "Leave scroll mode after this many seconds without ball movement. Off keeps it on."
 }

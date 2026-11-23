@@ -164,7 +164,8 @@ When no pointing device is available (or the service is stopped), the ball and
 the header badge turn gray and the badge reads **No device** with a broken-link
 icon.
 
-Every control writes `~/.config/omarchy/scrollmode.json` through
+A circled question mark next to a setting opens a short tooltip explaining what
+it changes. Every control writes `~/.config/omarchy/scrollmode.json` through
 `omarchy-scrollmode set` and the daemon reloads immediately. Sliders snap to
 their step (5 % for speeds, 50 ms for the hold threshold).
 
@@ -172,12 +173,13 @@ Every action confirms itself: the button, slider title, toggle or auto-exit chip
 flashes a green **✓ Done** for a moment, and "Reset to defaults" turns yellow
 ("Click again to reset") while it waits for the second click.
 
-### Sniper on the side button
+### Sniper on a mouse button
 
-While scrolling, holding the side mouse button (`BTN_SIDE`, default 275) slows
-the scroll down to the sniper speed; releasing it returns to normal scrolling.
-The button is swallowed while it does this, so it cannot trigger "back" in a
-browser. Turn it off in the panel or set `"sniper_button": 0`.
+While scrolling, holding a spare mouse button slows the scroll down to the
+sniper speed; releasing it returns to normal scrolling. It is off by default:
+enable it in the panel, which labels the active device's actual button (for
+example Back). The button is swallowed while it does this, so it cannot trigger
+"back" in a browser. When the device has no spare button the option is hidden.
 
 ### Inertia
 
@@ -242,7 +244,7 @@ button, and the bar icon is dimmed:
     "inertia": false            // coast after a fast flick
   },
 
-  "sniper_button": 275,         // hold this button to snipe (0 = off)
+  "sniper_button": 0,           // hold this button to snipe (0 = off)
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
   "hold_max_seconds": 60        // safety cap for a stuck momentary hold
@@ -311,7 +313,7 @@ omarchy-scrollmode (CLI) ──unix socket──▶ scrollmoded
 - With inertia on, the daemon keeps the ball's velocity after the last frame and
   emits decaying wheel events until the speed falls below a threshold or a new
   movement arrives.
-- The side button is handled inside the grabbed stream: it switches the
+- The sniper button is handled inside the grabbed stream: it switches the
   converter to the sniper multiplier only while held and is not replayed.
 - Device names and the device list come from `/run/udev/data` plus HID++ 2.0
   `DeviceName` (`0x0005`) over the receiver's hidraw interface.

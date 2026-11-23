@@ -57,11 +57,14 @@ HIDPP_NAME_FEATURE = 0x0005
 HIDPP_NAME_KEYS = ("m575", "ergo", "mx ", "trackball", "mouse")
 
 # Inertia: a fast flick keeps scrolling after the ball stops, decaying.
-INERTIA_MIN_SPEED = 1400.0     # counts/s needed to start coasting
-INERTIA_STOP_SPEED = 90.0      # counts/s at which coasting ends
-INERTIA_DECAY = 6.0            # per second, exponential
-INERTIA_MAX_SECONDS = 1.6
+INERTIA_MIN_SPEED = 1000.0     # peak counts/s needed to start coasting
+INERTIA_STOP_SPEED = 60.0      # counts/s at which coasting ends
+INERTIA_DECAY = 4.0            # per second, exponential
+INERTIA_MAX_SECONDS = 2.2
 KEYBOARD_HINTS = ("keyboard", "keypad", "kbd")
+# Common mouse-button codes, used for the UI's sniper-button label and to hide
+# the option when the device has no such button.
+BUTTON_CODES = (275, 276, 277, 278, 279, 280, 281, 282, 283)
 # Models that are trackballs even when the advertised name omits the word.
 TRACKBALL_KEYS = (
     "trackball",
@@ -107,7 +110,7 @@ DEFAULTS = {
         "hi_res": True,
         "inertia": False,
     },
-    "sniper_button": 275,
+    "sniper_button": 0,
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
@@ -450,6 +453,10 @@ class ScrollConverter:
         self.last_motion = 0.0
         self.vel_x = 0.0
         self.vel_y = 0.0
+        self.peak_speed = 0.0
+        self.peak_at = 0.0
+        self.last_dx = 0
+        self.last_dy = 0
         self.inertia_active = False
         self.inertia_axis: str | None = None
         self.inertia_started = 0.0
@@ -526,20 +533,62 @@ class ScrollConverter:
         axis = self._pick_axis(dx, dy, now)
         if axis == "x":
             dy = 0
+            self.vel_y = 0.0
         elif axis == "y":
             dx = 0
+            self.vel_x = 0.0
         if dx == 0 and dy == 0:
             return []
+
+        # A new gesture must not inherit the speed of the previous one. Without
+        # this, a slow vertical drag right after a fast horizontal one could
+        # coast on the stale horizontal velocity.
+        if previous and now - previous > 0.15:
+            self.vel_x = 0.0
+            self.vel_y = 0.0
+            previous = now - 0.016
 
         dt = max(0.001, now - previous) if previous else 0.016
         self.vel_x = self.vel_x * 0.65 + (dx / dt) * 0.35
         self.vel_y = self.vel_y * 0.65 + (dy / dt) * 0.35
         self.inertia_active = False
         self.last_motion = now
+        self.last_dx = dx
+        self.last_dy = dy
+
+        # Remember the fastest moment of the gesture. A flick often ends with
+        # one or two slower frames; using the final smoothed speed made those
+        # flicks fall below the threshold and not coast at all.
+        speed = math.hypot(self.vel_x, self.vel_y)
+        if now - self.peak_at > 0.15 or speed > self.peak_speed:
+            self.peak_speed = speed
+            self.peak_at = now
 
         vertical = -dy if not self.invert_v else dy
         horizontal = dx if not self.invert_h else -dx
         return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
+
+    def _coast_at_peak(self) -> None:
+        """Aim the coast at the fastest speed of the gesture, not its tail."""
+        if self.axis_lock:
+            if self.inertia_axis == "x":
+                sign = 1.0 if (self.vel_x > 0 or (self.vel_x == 0 and self.last_dx >= 0)) else -1.0
+                self.vel_x = sign * self.peak_speed
+                self.vel_y = 0.0
+            else:
+                sign = 1.0 if (self.vel_y > 0 or (self.vel_y == 0 and self.last_dy >= 0)) else -1.0
+                self.vel_y = sign * self.peak_speed
+                self.vel_x = 0.0
+            return
+
+        current = math.hypot(self.vel_x, self.vel_y)
+        if current > 0.001:
+            scale = self.peak_speed / current
+            self.vel_x *= scale
+            self.vel_y *= scale
+        else:
+            self.vel_x = math.copysign(self.peak_speed, self.last_dx or 1)
+            self.vel_y = math.copysign(self.peak_speed, self.last_dy or 1)
 
     def inertia_events(self, now: float) -> list[tuple[int, int, int]]:
         """Coast after a flick, decaying to a stop."""
@@ -549,12 +598,16 @@ class ScrollConverter:
         if not self.inertia_active:
             if now - self.last_motion < 0.04:
                 return []
-            if math.hypot(self.vel_x, self.vel_y) < INERTIA_MIN_SPEED:
+            if now - self.peak_at > 0.2 or self.peak_speed < INERTIA_MIN_SPEED:
                 return []
             self.inertia_active = True
             self.inertia_started = now
-            self.last_tick = now
+            # Account for the quiet gap before the coast starts instead of
+            # throwing the first 40-50 ms away on a 1 ms tick.
+            self.last_tick = max(self.last_motion, now - 0.05)
             self.inertia_axis = self.axis if self.axis_lock else None
+            self._coast_at_peak()
+            log(f"inertia {self.peak_speed:.0f} counts/s")
 
         dt = min(0.05, max(0.001, now - self.last_tick))
         self.last_tick = now
@@ -739,6 +792,13 @@ class Daemon:
             log(f"cannot write {DEVICE_PATH}: {exc}")
 
     def refresh_status(self, force: bool = False) -> None:
+        # Enumerating every /dev/input node costs a few hundred milliseconds on
+        # a normal machine. That is invisible in pointer mode (the device is not
+        # grabbed) but it stalls the grabbed event stream while scrolling and
+        # makes the velocity estimate jump. The device list does not change
+        # under an active grab, so keep the last snapshot until pointer mode.
+        if not force and self.mode != "pointer":
+            return
         now = time.monotonic()
         if not force and now - self.last_scan < 2.0:
             return
@@ -767,6 +827,18 @@ class Daemon:
             if device["id"] == self.active_id:
                 active_name = name
 
+        configured = int(self.cfg.get("sniper_button") or 0)
+        buttons: set[int] = set()
+        if self.dev is not None:
+            try:
+                buttons = set(self.dev.capabilities(absinfo=False).get(ecodes.EV_KEY, []))
+            except OSError:
+                buttons = set()
+        candidate = configured
+        if not candidate:
+            candidate = next((code for code in BUTTON_CODES if code in buttons), 0)
+        sniper_available = bool(candidate and candidate in buttons)
+
         status = {
             "present": self.dev is not None,
             "activeId": self.active_id,
@@ -774,6 +846,8 @@ class Daemon:
             "name": active_name,
             "hidden": hidden,
             "devices": listed,
+            "sniperButton": sniper_available,
+            "sniperCode": candidate if sniper_available else 0,
         }
         text = json.dumps(status, ensure_ascii=False)
         if text == self.last_status:
@@ -1296,6 +1370,13 @@ class Daemon:
             pending = self.press is not None and not self.press["fired"]
             if self.converter.inertia_active:
                 timeout = 0.016
+            elif self.mode in ("scroll", "sniper") and (
+                time.monotonic() - self.converter.last_motion < 0.15
+            ):
+                # Wake up soon after the ball stops so the coast starts while
+                # the flick still feels connected (the 40 ms guard still needs
+                # a few ticks).
+                timeout = 0.016
             else:
                 timeout = 0.05 if pending else 0.2
             for key, _ in self.sel.select(timeout=timeout):
@@ -1529,6 +1610,35 @@ def selftest() -> int:
         now += 0.016
         coast += len(converter.inertia_events(now))
     print(f"inertia from slow motion: {coast} events (expect 0)")
+    assert coast == 0, coast
+
+    # A moderate flick still coasts; a slower drag of the same shape does not.
+    converter = make({"inertia": True})
+    now += 10.0
+    for _ in range(6):  # 12 counts / 8 ms = 1500 counts/s
+        converter.events(0, 12, now)
+        now += 0.008
+    coast = 0
+    for _ in range(100):
+        now += 0.016
+        for _event_type, code, value in converter.inertia_events(now):
+            if code == REL_WHEEL_HI_RES:
+                coast += value
+    print(f"inertia moderate: {coast} hi-res units")
+    assert coast < 0, coast
+
+    converter = make({"inertia": True})
+    now += 10.0
+    for _ in range(6):  # 8 counts / 8 ms = 1000 counts/s
+        converter.events(0, 8, now)
+        now += 0.008
+    coast = 0
+    for _ in range(100):
+        now += 0.016
+        for _event_type, code, value in converter.inertia_events(now):
+            if code == REL_WHEEL_HI_RES:
+                coast += value
+    print(f"inertia below threshold: {coast} events (expect 0)")
     assert coast == 0, coast
 
     print("selftest: ok")

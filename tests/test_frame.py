@@ -109,8 +109,8 @@ def main():
     assert hi == [-60], hi
 
     # Any mouse button leaves scroll mode when exit_on_click is on, and the
-    # click is still forwarded before the grab is dropped. BTN_SIDE is the
-    # momentary sniper trigger by default, so it is checked separately below.
+    # click is still forwarded before the grab is dropped. BTN_SIDE is a
+    # momentary sniper trigger when enabled, so it is checked separately below.
     for code in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE, ecodes.BTN_EXTRA):
         daemon = fresh()
         daemon.cfg["exit_on_click"] = True
@@ -123,6 +123,7 @@ def main():
     # The side button is a momentary sniper trigger: pressing slows the scroll
     # down, releasing restores scroll, and the button itself is swallowed.
     daemon = fresh("scroll")
+    daemon.cfg["sniper_button"] = 275
     daemon.cfg["scroll"]["sniper_multiplier"] = 0.5
     ui = daemon.ui
     daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 1)])

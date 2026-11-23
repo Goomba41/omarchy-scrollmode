@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] — 2026-11-23
+
+### Added
+
+- Circled question-mark hints next to the non-obvious settings, with short
+  tooltips explaining what each one changes.
+
+### Changed
+
+- The sniper button is off by default. The panel labels the active device's
+  actual spare button (Back, Forward, ...) and hides the option when the device
+  has none.
+
+### Fixed
+
+- Inertia starts about 40 ms after the ball stops instead of waiting for the
+  200 ms event-loop timeout, and the first coast frame accounts for the quiet
+  gap instead of emitting a single millisecond.
+- Device enumeration is paused while scrolling. Scanning every input node took
+  roughly 250 ms on a normal desktop; during a grabbed flick that stalled the
+  event stream, compressed many frames into one burst and made the velocity
+  estimate (and therefore the coast) jump or disappear.
+- A moderate flick (around 1500 counts/s) now triggers the coast: the threshold
+  was lowered, the velocity is reset between separate gestures, and the unused
+  axis is cleared so a slow drag after a fast one cannot inherit its speed.
+
 ## [1.3.1] — 2026-11-23
 
 ### Security

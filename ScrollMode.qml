@@ -57,6 +57,14 @@ Ui.Panel {
   readonly property bool present: !!(status && status.present === true)
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
+  readonly property bool sniperAvailable: !!(status && status.sniperButton === true)
+  readonly property int sniperCode: (status && Number(status.sniperCode)) ? Number(status.sniperCode) : 0
+  readonly property string sniperButtonName: {
+    var code = root.sniperCode
+    if (code === 275 || code === 278) return strings.t("button.back")
+    if (code === 276 || code === 277) return strings.t("button.forward")
+    return strings.t("button.other")
+  }
 
   readonly property var deviceOptions: {
     var options = []
@@ -529,6 +537,7 @@ Ui.Panel {
           SliderRow {
             label: strings.t("menu.speed")
             hint: strings.t("menu.speedHint")
+            help: strings.t("help.speed")
             valueText: Math.round(sliderValue) + " %"
             from: 25
             to: 300
@@ -549,6 +558,7 @@ Ui.Panel {
           SliderRow {
             label: strings.t("menu.sniper")
             hint: strings.t("menu.sniperHint")
+            help: strings.t("help.sniperSpeed")
             valueText: Math.round(sliderValue) + " %"
             from: 5
             to: 100
@@ -577,39 +587,48 @@ Ui.Panel {
 
           ToggleRow {
             label: strings.t("menu.axisLock")
+            help: strings.t("help.axisLock")
             checked: root.bool("scroll.axis_lock")
             onClicked: root.setValue("scroll.axis_lock", !root.bool("scroll.axis_lock"))
           }
 
           ToggleRow {
             label: strings.t("menu.hiRes")
+            help: strings.t("help.smooth")
             checked: root.bool("scroll.hi_res")
             onClicked: root.setValue("scroll.hi_res", !root.bool("scroll.hi_res"))
           }
 
           ToggleRow {
             label: strings.t("menu.exitOnClick")
+            help: strings.t("help.exitOnClick")
             checked: root.bool("exit_on_click")
             onClicked: root.setValue("exit_on_click", !root.bool("exit_on_click"))
           }
 
           ToggleRow {
             label: strings.t("menu.inertia")
+            help: strings.t("help.inertia")
             checked: root.bool("scroll.inertia")
             onClicked: root.setValue("scroll.inertia", !root.bool("scroll.inertia"))
           }
 
           ToggleRow {
-            label: strings.t("menu.sniperButton")
-            checked: Number(root.value("sniper_button", 275)) > 0
-            onClicked: root.setValue("sniper_button",
-              Number(root.value("sniper_button", 275)) > 0 ? 0 : 275)
+            visible: root.sniperAvailable
+            label: strings.t("menu.sniperButton").arg(root.sniperButtonName)
+            help: strings.t("help.sniperButton").arg(root.sniperButtonName)
+            checked: Number(root.value("sniper_button", 0)) > 0
+            onClicked: {
+              var on = Number(root.value("sniper_button", 0)) > 0
+              root.setValue("sniper_button", on ? 0 : (root.sniperCode || 275))
+            }
           }
 
           Ui.PanelSeparator { width: parent.width }
 
           SliderRow {
             label: strings.t("menu.holdThreshold")
+            help: strings.t("help.hold")
             valueText: strings.t("menu.ms").arg(Math.round(sliderValue))
             from: 100
             to: 800
@@ -624,13 +643,27 @@ Ui.Panel {
             width: parent.width
             spacing: Style.space(4)
 
-            Text {
+            Item {
               width: parent.width
-              text: strings.t("menu.autoExit")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
+              height: Math.max(autoExitLabel.implicitHeight, autoExitHint.height)
+
+              Text {
+                id: autoExitLabel
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("menu.autoExit")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+              }
+
+              HintIcon {
+                id: autoExitHint
+                anchors.left: autoExitLabel.right
+                anchors.leftMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("help.autoExit")
+              }
             }
 
             Row {
@@ -758,6 +791,56 @@ Ui.Panel {
     }
   }
 
+  // Small circled question mark with a tooltip. The MouseArea only exists for
+  // hover and to keep a click on the hint from toggling the row underneath.
+  component HintIcon: Item {
+    id: hint
+
+    property string text: ""
+
+    width: Style.space(14)
+    height: width
+    implicitWidth: width
+    implicitHeight: height
+    visible: text !== ""
+    z: 2
+
+    Rectangle {
+      anchors.fill: parent
+      radius: width / 2
+      color: "transparent"
+      border.width: 1
+      border.color: Color.popups.text
+      opacity: hintMouse.containsMouse ? 0.85 : 0.4
+    }
+
+    Text {
+      anchors.centerIn: parent
+      text: "?"
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: hintMouse.containsMouse ? 0.95 : 0.45
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    MouseArea {
+      id: hintMouse
+      anchors.fill: parent
+      hoverEnabled: true
+      acceptedButtons: Qt.LeftButton
+      cursorShape: Qt.WhatsThisCursor
+      onClicked: {}
+    }
+
+    Ui.PanelToolTip {
+      visible: hintMouse.containsMouse
+      text: hint.text
+      width: Style.space(240)
+      delay: 250
+    }
+  }
+
   // Green confirmation flashed after a control changes: an optional dot, a
   // check, and an optional "Done".
   component DoneMark: Row {
@@ -833,6 +916,7 @@ Ui.Panel {
     id: toggleRow
 
     property string label: ""
+    property string help: ""
     property bool checked: false
     property bool flash: false
 
@@ -852,7 +936,8 @@ Ui.Panel {
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       width: Math.min(implicitWidth, Math.max(0, toggleRow.width - toggleSwitch.width - Style.space(8)
-        - (toggleRow.flash ? toggleDone.width + Style.space(8) : 0)))
+        - (toggleRow.flash ? toggleDone.width + Style.space(8) : 0)
+        - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0)))
       text: toggleRow.label
       textFormat: Text.PlainText
       color: Color.popups.text
@@ -861,9 +946,17 @@ Ui.Panel {
       elide: Text.ElideRight
     }
 
+    HintIcon {
+      id: hintIcon
+      anchors.left: toggleLabel.right
+      anchors.leftMargin: Style.space(6)
+      anchors.verticalCenter: parent.verticalCenter
+      text: toggleRow.help
+    }
+
     DoneMark {
       id: toggleDone
-      anchors.left: toggleLabel.right
+      anchors.left: hintIcon.visible ? hintIcon.right : toggleLabel.right
       anchors.leftMargin: Style.space(8)
       anchors.verticalCenter: parent.verticalCenter
       shown: toggleRow.flash
@@ -893,6 +986,7 @@ Ui.Panel {
 
     property string label: ""
     property string hint: ""
+    property string help: ""
     property string valueText: ""
     property real from: 0
     property real to: 1
@@ -938,8 +1032,16 @@ Ui.Panel {
         font.pixelSize: Style.font.body
       }
 
-      DoneMark {
+      HintIcon {
+        id: hintIcon
         anchors.left: labelText.right
+        anchors.leftMargin: Style.space(6)
+        anchors.verticalCenter: parent.verticalCenter
+        text: row.help
+      }
+
+      DoneMark {
+        anchors.left: hintIcon.visible ? hintIcon.right : labelText.right
         anchors.leftMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter
         shown: row.flash
