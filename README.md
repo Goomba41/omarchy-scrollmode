@@ -94,6 +94,20 @@ The script elevates once (via `sudo` by default, or `SCROLLMODE_ELEVATE=pkexec
 | `~/.config/omarchy/plugins/anton.scrollmode/` | the plugin (manifest, widget, i18n) |
 | `~/.config/hypr/bindings.lua` | one managed hotkey block |
 
+### What the installer changes
+
+- Creates `~/.config/omarchy/scrollmode.json` **only when it does not exist**.
+- Adds one delimited block to `~/.config/hypr/bindings.lua`; the rest of the
+  file is left untouched, and the pre-install copy is kept as
+  `bindings.lua.before-scrollmode`.
+- Adds the widget to the bar with `omarchy bar put` — the same path any plugin
+  uses; disabling or removing the plugin takes it out again.
+- Installs the daemon, the CLI and a systemd unit under `/usr/local` and
+  `/etc` (with sudo, from the visible installer).
+
+Nothing else is touched. Uninstall reverses all of it and keeps your settings
+file.
+
 ## Usage
 
 ### Hotkeys
