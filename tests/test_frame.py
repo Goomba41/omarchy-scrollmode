@@ -56,6 +56,16 @@ class FakeDev:
         pass
 
 
+class FakeSeatGuard:
+    """Pretend the test uid owns the active seat; tests override when needed."""
+
+    def __init__(self, value=("test", 1000)):
+        self.value = value
+
+    def active(self, seat):
+        return self.value
+
+
 def fresh(mode="scroll"):
     daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
     daemon.cfg["exit_on_click"] = False
@@ -65,6 +75,8 @@ def fresh(mode="scroll"):
     daemon.ui = FakeUI()
     daemon.grabbed = True  # so activate() only switches the mode
     daemon.write_state = lambda: None
+    # CI runners are headless (no active seat); never let the real guard run.
+    daemon.seat_guard = FakeSeatGuard()
     return daemon
 
 
@@ -193,13 +205,6 @@ def main():
     print("tap/hold: ok")
 
     # -- shared computer: only the active owner may control -----------------
-    class FakeSeatGuard:
-        def __init__(self, value):
-            self.value = value
-
-        def active(self, seat):
-            return self.value
-
     daemon = fresh("scroll")
     daemon.seat_guard = FakeSeatGuard(("2", 2000))
     daemon.tick(time.monotonic())
