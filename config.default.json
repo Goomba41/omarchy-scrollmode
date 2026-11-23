@@ -19,7 +19,9 @@
     "axis_lock": true,
     "axis_window_seconds": 0.25,
     "hi_res": true,
-    "inertia": false
+    "inertia": false,
+    "inertia_trigger": 12,
+    "inertia_strength": 100
   },
   "exit_on_click": true,
   "auto_exit_seconds": 0,

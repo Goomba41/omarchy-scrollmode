@@ -57,14 +57,15 @@ HIDPP_NAME_FEATURE = 0x0005
 HIDPP_NAME_KEYS = ("m575", "ergo", "mx ", "trackball", "mouse")
 
 # Inertia: a fast flick keeps scrolling after the ball stops, decaying.
-INERTIA_MIN_SPEED = 1000.0     # peak counts/s needed to start coasting
+INERTIA_TRIGGER_DEFAULT = 12.0  # notches/s at which a flick starts coasting
+INERTIA_STRENGTH_DEFAULT = 100.0  # percent; higher = longer coast
+INERTIA_DECAY_BASE = 4.0        # per second at 100 % strength
 INERTIA_STOP_SPEED = 60.0      # counts/s at which coasting ends
-INERTIA_DECAY = 4.0            # per second, exponential
 INERTIA_MAX_SECONDS = 2.2
 KEYBOARD_HINTS = ("keyboard", "keypad", "kbd")
-# Common mouse-button codes, used for the UI's sniper-button label and to hide
-# the option when the device has no such button.
-BUTTON_CODES = (275, 276, 277, 278, 279, 280, 281, 282, 283)
+# Buttons with a standard meaning that must not be repurposed as a sniper
+# trigger: left/right/middle, Back/Forward (BTN_* and KEY_* variants).
+RESERVED_BUTTONS = frozenset((158, 159, 272, 273, 274, 275, 276, 277, 278))
 # Models that are trackballs even when the advertised name omits the word.
 TRACKBALL_KEYS = (
     "trackball",
@@ -109,6 +110,8 @@ DEFAULTS = {
         "axis_window_seconds": 0.25,
         "hi_res": True,
         "inertia": False,
+        "inertia_trigger": 12.0,
+        "inertia_strength": 100.0,
     },
     "sniper_button": 0,
     "exit_on_click": True,
@@ -431,6 +434,11 @@ class ScrollConverter:
         self.axis_window = 0.25
         self.hi_res = True
         self.inertia = False
+        self.inertia_trigger = INERTIA_TRIGGER_DEFAULT
+        self.inertia_strength = INERTIA_STRENGTH_DEFAULT
+        self.inertia_min_speed = 0.0
+        self.inertia_decay = INERTIA_DECAY_BASE
+        self.frame_interval = 0.008
         self.reset()
 
     def configure(self, cfg: dict) -> None:
@@ -443,6 +451,15 @@ class ScrollConverter:
         self.axis_window = max(0.0, float(scroll.get("axis_window_seconds", 0.25)))
         self.hi_res = bool(scroll.get("hi_res", True))
         self.inertia = bool(scroll.get("inertia", False))
+        self.inertia_trigger = max(
+            1.0, float(scroll.get("inertia_trigger", INERTIA_TRIGGER_DEFAULT) or INERTIA_TRIGGER_DEFAULT)
+        )
+        self.inertia_strength = max(
+            10.0,
+            float(scroll.get("inertia_strength", INERTIA_STRENGTH_DEFAULT) or INERTIA_STRENGTH_DEFAULT),
+        )
+        self.inertia_min_speed = self.inertia_trigger * self.counts_per_notch
+        self.inertia_decay = INERTIA_DECAY_BASE / (self.inertia_strength / 100.0)
 
     def reset(self) -> None:
         self.acc_v = 0.0
@@ -530,6 +547,10 @@ class ScrollConverter:
             return []
 
         previous = self.last_motion
+        if previous:
+            interval = now - previous
+            if 0.002 <= interval <= 0.05:
+                self.frame_interval = self.frame_interval * 0.8 + interval * 0.2
         axis = self._pick_axis(dx, dy, now)
         if axis == "x":
             dy = 0
@@ -551,6 +572,15 @@ class ScrollConverter:
         dt = max(0.001, now - previous) if previous else 0.016
         self.vel_x = self.vel_x * 0.65 + (dx / dt) * 0.35
         self.vel_y = self.vel_y * 0.65 + (dy / dt) * 0.35
+        if self.inertia_active:
+            # A new movement cancels the coast. Forget both the old peak and
+            # the coast velocity, otherwise a tiny residual frame could start a
+            # second coast from the same flick once this motion stops again.
+            log(f"inertia cancelled after {(now - self.inertia_started) * 1000:.0f} ms")
+            self.peak_speed = 0.0
+            self.peak_at = 0.0
+            self.vel_x = 0.0
+            self.vel_y = 0.0
         self.inertia_active = False
         self.last_motion = now
         self.last_dx = dx
@@ -596,9 +626,12 @@ class ScrollConverter:
             return []
 
         if not self.inertia_active:
-            if now - self.last_motion < 0.04:
+            # Wait for roughly two missed frames, so a 125 Hz device starts
+            # its coast after ~20 ms instead of a fixed, visible 40 ms pause.
+            guard = min(0.05, max(0.02, self.frame_interval * 2.5))
+            if now - self.last_motion < guard:
                 return []
-            if now - self.peak_at > 0.2 or self.peak_speed < INERTIA_MIN_SPEED:
+            if now - self.peak_at > 0.2 or self.peak_speed < self.inertia_min_speed:
                 return []
             self.inertia_active = True
             self.inertia_started = now
@@ -611,7 +644,7 @@ class ScrollConverter:
 
         dt = min(0.05, max(0.001, now - self.last_tick))
         self.last_tick = now
-        decay = math.exp(-INERTIA_DECAY * dt)
+        decay = math.exp(-self.inertia_decay * dt)
         self.vel_x *= decay
         self.vel_y *= decay
 
@@ -623,6 +656,8 @@ class ScrollConverter:
 
         if math.hypot(vx, vy) < INERTIA_STOP_SPEED or now - self.inertia_started > INERTIA_MAX_SECONDS:
             self.inertia_active = False
+            self.peak_speed = 0.0
+            self.peak_at = 0.0
             return []
 
         vertical = (-vy if not self.invert_v else vy) * dt
@@ -727,6 +762,9 @@ class Daemon:
         self.seat_guard = SeatGuard()
         self.last_seat_check = 0.0
         self.last_denied_log = 0.0
+        self.learning_until = 0.0
+        self.learn_code = 0
+        self.learn_error = ""
         self.rescan_requested = False
 
         self.sel = selectors.DefaultSelector()
@@ -827,17 +865,19 @@ class Daemon:
             if device["id"] == self.active_id:
                 active_name = name
 
-        configured = int(self.cfg.get("sniper_button") or 0)
+        configured = self.sniper_button_code()
         buttons: set[int] = set()
         if self.dev is not None:
             try:
                 buttons = set(self.dev.capabilities(absinfo=False).get(ecodes.EV_KEY, []))
             except OSError:
                 buttons = set()
-        candidate = configured
-        if not candidate:
-            candidate = next((code for code in BUTTON_CODES if code in buttons), 0)
-        sniper_available = bool(candidate and candidate in buttons)
+        if configured and configured not in buttons:
+            configured = 0
+        spare = any(
+            code not in RESERVED_BUTTONS and 1 <= code <= 767 for code in buttons
+        )
+        sniper_available = bool(configured or spare)
 
         status = {
             "present": self.dev is not None,
@@ -846,8 +886,11 @@ class Daemon:
             "name": active_name,
             "hidden": hidden,
             "devices": listed,
-            "sniperButton": sniper_available,
-            "sniperCode": candidate if sniper_available else 0,
+            "sniperAvailable": sniper_available,
+            "sniperCode": configured,
+            "learning": self.learning_until > time.monotonic(),
+            "learnCode": self.learn_code,
+            "learnError": self.learn_error,
         }
         text = json.dumps(status, ensure_ascii=False)
         if text == self.last_status:
@@ -1081,6 +1124,7 @@ class Daemon:
             if event.type == ecodes.EV_SYN:
                 if event.code == ecodes.SYN_REPORT:
                     frame, self.frame = self.frame, []
+                    self.check_learn(frame)
                     self.handle_frame(frame)
                 elif event.code == ecodes.SYN_DROPPED:
                     self.frame = []
@@ -1096,7 +1140,7 @@ class Daemon:
         dy = 0
         passthrough = []
         click = False
-        sniper_button = int(self.cfg.get("sniper_button") or 0)
+        sniper_button = self.sniper_button_code()
 
         for event in frame:
             # A mouse button held down acts as a temporary sniper trigger: press
@@ -1160,6 +1204,50 @@ class Daemon:
         except OSError as exc:
             raise DeviceLost() from exc
 
+    # -- sniper button -----------------------------------------------------
+
+    def sniper_button_code(self) -> int:
+        """The configured trigger, ignoring reserved navigation buttons."""
+        code = int(self.cfg.get("sniper_button") or 0)
+        if not code or code in RESERVED_BUTTONS:
+            return 0
+        return code
+
+    def start_learn(self) -> str:
+        if self.dev is None:
+            return "error: no pointing device"
+        self.deactivate()
+        self.learning_until = time.monotonic() + 10.0
+        self.learn_code = 0
+        self.learn_error = ""
+        log("learn: press a spare mouse button")
+        self.refresh_status(force=True)
+        return "press a spare mouse button"
+
+    def stop_learn(self, error: str = "") -> None:
+        changed = self.learning_until > 0.0 or self.learn_error != error
+        self.learning_until = 0.0
+        self.learn_error = error
+        if changed:
+            log(f"learn stopped ({error or 'ok'})")
+            self.refresh_status(force=True)
+
+    def check_learn(self, frame: list) -> None:
+        if self.learning_until <= 0.0:
+            return
+        for event in frame:
+            if event.type != ecodes.EV_KEY or event.value != 1:
+                continue
+            code = event.code
+            if code in RESERVED_BUTTONS:
+                self.stop_learn("reserved")
+                return
+            if 1 <= code <= 767:
+                self.learn_code = code
+                log(f"learned sniper button {code}")
+                self.stop_learn("")
+                return
+
     # -- control socket ----------------------------------------------------
 
     def command_allowed(self, peer_uid: int) -> tuple[bool, str]:
@@ -1209,6 +1297,11 @@ class Daemon:
         if verb == "rescan":
             self.rescan_requested = True
             return self.mode
+        if verb == "learn":
+            if arg == "cancel":
+                self.stop_learn()
+                return "cancelled"
+            return self.start_learn()
         if verb in ("status", "ping") or not verb:
             return self.mode
         return f"error: unknown command {verb!r}"
@@ -1264,6 +1357,8 @@ class Daemon:
 
     def tick(self, now: float) -> None:
         self.refresh_status()
+        if self.learning_until and now > self.learning_until:
+            self.stop_learn("timeout")
         if self.mode != "pointer" and now - self.last_seat_check >= 1.0:
             self.last_seat_check = now
             active = self.seat_guard.active(self.seat)

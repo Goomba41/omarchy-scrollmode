@@ -123,20 +123,29 @@ def main():
     # The side button is a momentary sniper trigger: pressing slows the scroll
     # down, releasing restores scroll, and the button itself is swallowed.
     daemon = fresh("scroll")
-    daemon.cfg["sniper_button"] = 275
+    daemon.cfg["sniper_button"] = 279
     daemon.cfg["scroll"]["sniper_multiplier"] = 0.5
     ui = daemon.ui
-    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 1)])
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_TASK, 1)])
     assert daemon.mode == "sniper", daemon.mode
     assert not ui.events, ui.events
     daemon.handle_frame([event(ecodes.EV_REL, ecodes.REL_Y, 85)])
     hi = [v for (t, c, v) in ui.events if c == scrollmoded.REL_WHEEL_HI_RES]
     print("sniper button:", daemon.mode, hi)
     assert hi == [-60], hi
-    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 0)])
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_TASK, 0)])
     assert daemon.mode == "scroll", daemon.mode
     assert not [1 for (t, c, _v) in ui.events if t == ecodes.EV_KEY], ui.events
     print("sniper button: ok")
+
+    # Back/Forward stay navigation buttons even if an old config names them.
+    daemon = fresh("scroll")
+    daemon.cfg["sniper_button"] = 275
+    ui = daemon.ui
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 1)])
+    assert daemon.mode == "scroll", daemon.mode
+    assert (ecodes.EV_KEY, ecodes.BTN_SIDE, 1) in ui.events, ui.events
+    print("reserved sniper button: ok")
 
     # Disabled trigger: the side button behaves like any other click.
     daemon = fresh("scroll")
@@ -237,6 +246,31 @@ def main():
     ok, reason = daemon.command_allowed(1000)
     assert not ok and "cannot verify" in reason, reason
     print("seat guard decisions: ok")
+
+    # A tiny movement during a coast cancels it and must not start a second
+    # coast from the same flick.
+    converter = scrollmoded.ScrollConverter()
+    converter.configure({"scroll": {
+        "counts_per_notch": 100.0, "sensitivity": 1.0, "invert_vertical": False,
+        "invert_horizontal": False, "axis_lock": True, "axis_window_seconds": 0.25,
+        "hi_res": True, "inertia": True, "inertia_trigger": 12.0,
+        "inertia_strength": 100.0}})
+    now = 100.0
+    for _ in range(6):
+        converter.events(0, 60, now)
+        now += 0.008
+    for _ in range(4):
+        now += 0.016
+        converter.inertia_events(now)
+    assert converter.inertia_active
+    converter.events(0, 1, now)
+    assert not converter.inertia_active
+    restarted = 0
+    for _ in range(100):
+        now += 0.016
+        restarted += len(converter.inertia_events(now))
+    print("inertia restart after cancel:", restarted, "events (expect 0)")
+    assert restarted == 0, restarted
 
     print("frame path: ok")
     return 0

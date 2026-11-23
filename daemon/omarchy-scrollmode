@@ -11,6 +11,7 @@ Usage:
   omarchy-scrollmode use <id>    make a device the active one
   omarchy-scrollmode rescan      re-read the connected devices
   omarchy-scrollmode set <path> <value>   change one setting
+  omarchy-scrollmode learn       capture a spare mouse button for sniper
   omarchy-scrollmode reset       restore the defaults
   omarchy-scrollmode hotkey      apply the configured hotkeys to Hyprland
   omarchy-scrollmode config      print the config path
@@ -28,6 +29,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import time
 
 APP = "omarchy-scrollmode"
 RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode")
@@ -37,6 +39,15 @@ STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
 HOME = os.path.expanduser("~")
 CONFIG_PATH = os.path.join(HOME, ".config", "omarchy", "scrollmode.json")
 BINDINGS_PATH = os.path.join(HOME, ".config", "hypr", "bindings.lua")
+
+# Left/right/middle and Back/Forward keep their standard meaning.
+RESERVED_BUTTONS = frozenset((158, 159, 272, 273, 274, 275, 276, 277, 278))
+BUTTON_NAMES = {
+    158: "Back", 159: "Forward",
+    272: "Left", 273: "Right", 274: "Middle",
+    275: "Back", 276: "Forward", 277: "Forward", 278: "Back",
+    279: "Task", 280: "Extra",
+}
 
 DEFAULT_HOTKEY = "ALT + Z"
 DEFAULT_SNIPER_HOTKEY = "ALT + S"
@@ -56,7 +67,11 @@ DEFAULT_CONFIG = {
         "axis_lock": True,
         "axis_window_seconds": 0.25,
         "hi_res": True,
+        "inertia": False,
+        "inertia_trigger": 12.0,
+        "inertia_strength": 100.0,
     },
+    "sniper_button": 0,
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
@@ -73,6 +88,8 @@ SETTINGS = {
     "scroll.axis_window_seconds": ("number", 0.05, 2.0),
     "scroll.hi_res": ("bool",),
     "scroll.inertia": ("bool",),
+    "scroll.inertia_trigger": ("number", 4, 30),
+    "scroll.inertia_strength": ("number", 50, 200),
     "sniper_button": ("number", 0, 767),
     "exit_on_click": ("bool",),
     "auto_exit_seconds": ("number", 0, 3600),
@@ -306,6 +323,11 @@ def coerce(path: str, raw: str):
         low, high = spec[1], spec[2]
         if not low <= number <= high:
             raise SystemExit(f"{APP}: {path} must be between {low:g} and {high:g}")
+        if path == "sniper_button" and int(number) in RESERVED_BUTTONS:
+            raise SystemExit(
+                f"{APP}: {BUTTON_NAMES.get(int(number), 'that button')} is reserved "
+                "(use `omarchy-scrollmode learn` and a spare button)"
+            )
         return int(number) if number == int(number) else round(number, 4)
     return raw
 
@@ -347,6 +369,50 @@ def reset_config() -> int:
     reload_daemon()
     print("defaults restored")
     return apply_hotkey()
+
+
+def read_status() -> dict:
+    try:
+        with open(STATUS_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def learn_button(args: list[str]) -> int:
+    if args and args[0].lower() == "cancel":
+        print(send("learn cancel"))
+        return 0
+    reply = send("learn")
+    if reply.startswith(("error", "denied")):
+        print(f"{APP}: {reply}", file=sys.stderr)
+        return 1
+    print(reply)
+    deadline = time.monotonic() + 12.0
+    while time.monotonic() < deadline:
+        status = read_status()
+        code = int(status.get("learnCode") or 0)
+        if code:
+            set_config_value("sniper_button", str(code))
+            print(f"button: {BUTTON_NAMES.get(code, f'button {code}')} ({code})")
+            return 0
+        error = str(status.get("learnError") or "")
+        if error and not status.get("learning"):
+            if error == "reserved":
+                print(
+                    f"{APP}: left, right, middle, Back and Forward are reserved; "
+                    "press a spare button",
+                    file=sys.stderr,
+                )
+            elif error == "timeout":
+                print(f"{APP}: no button pressed", file=sys.stderr)
+            else:
+                print(f"{APP}: learn failed ({error})", file=sys.stderr)
+            return 1
+        time.sleep(0.2)
+    print(f"{APP}: no button pressed", file=sys.stderr)
+    return 1
 
 
 def list_devices() -> int:
@@ -392,6 +458,9 @@ def main(argv: list[str]) -> int:
 
     if command == "reset":
         return reset_config()
+
+    if command == "learn":
+        return learn_button(argv[1:])
 
     if command == "devices":
         return list_devices()

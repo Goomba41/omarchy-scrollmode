@@ -10,25 +10,32 @@ All notable changes to this project are documented here. The format follows
 
 - Circled question-mark hints next to the non-obvious settings, with short
   tooltips explaining what each one changes.
+- Sniper trigger learning: choose a spare mouse button in the panel (or run
+  `omarchy-scrollmode learn`) and press it once. The button is stored as
+  `sniper_button`; the option is hidden when the device reports no spare button.
 
 ### Changed
 
-- The sniper button is off by default. The panel labels the active device's
-  actual spare button (Back, Forward, ...) and hides the option when the device
-  has none.
+- Inertia has **Trigger** and **Coast** controls (`inertia_trigger` in notches
+  per second, `inertia_strength` in percent), so the balance is adjustable
+  instead of hard-coded.
+- The sniper button is off by default. Left, right, middle, Back and Forward are
+  reserved and rejected during learning; an old `sniper_button: 275` config no
+  longer steals the Back button.
+- Setting titles are shorter now that the tooltips explain them.
 
 ### Fixed
 
-- Inertia starts about 40 ms after the ball stops instead of waiting for the
-  200 ms event-loop timeout, and the first coast frame accounts for the quiet
-  gap instead of emitting a single millisecond.
+- Inertia starts after roughly two missed device frames (20–50 ms) instead of a
+  fixed 40 ms, and uses the fastest moment of the gesture instead of its slow
+  tail.
+- A small movement during a coast clears the stale velocity and peak, so it
+  cannot start a second coast from the same flick. This removes the occasional
+  double kick.
 - Device enumeration is paused while scrolling. Scanning every input node took
   roughly 250 ms on a normal desktop; during a grabbed flick that stalled the
   event stream, compressed many frames into one burst and made the velocity
   estimate (and therefore the coast) jump or disappear.
-- A moderate flick (around 1500 counts/s) now triggers the coast: the threshold
-  was lowered, the velocity is reset between separate gestures, and the unused
-  axis is cleared so a slow drag after a fast one cannot inherit its speed.
 
 ## [1.3.1] — 2026-11-23
 

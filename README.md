@@ -28,9 +28,9 @@ settings on a left click.
   amber for sniper. It fills the bar icon slot; the settings header shows the
   same ball at 44 px, turning around its vertical axis (fast for a second, then
   a slow idle turn) with a rounded mode badge next to the title.
-- **Real settings UI**: speed, sniper speed, invert, axis lock, hi-res,
-  leave-on-click, inertia, sniper button, hold threshold, auto-exit, reset,
-  open config.
+- **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
+  scrolling, exit-on-click, inertia with trigger and coast controls, a learned
+  sniper button, hold threshold, auto-exit, reset, open config.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -176,16 +176,25 @@ flashes a green **✓ Done** for a moment, and "Reset to defaults" turns yellow
 ### Sniper on a mouse button
 
 While scrolling, holding a spare mouse button slows the scroll down to the
-sniper speed; releasing it returns to normal scrolling. It is off by default:
-enable it in the panel, which labels the active device's actual button (for
-example Back). The button is swallowed while it does this, so it cannot trigger
-"back" in a browser. When the device has no spare button the option is hidden.
+sniper speed; releasing it returns to normal scrolling. It is off by default.
+Press **Choose sniper button…** (or run `omarchy-scrollmode learn`) and then the
+button you want; the CLI captures its code. Left, right, middle, Back and
+Forward are reserved because they already have a standard meaning, so the
+option is hidden for devices that only have those buttons. The chosen button is
+swallowed while scrolling, so it cannot trigger a navigation action.
 
 ### Inertia
 
 With inertia on, a fast flick keeps scrolling for a moment and then decays to a
 stop, instead of stopping the instant the ball does. It is off by default and
 only starts on real flicks, so slow, precise movement is never affected.
+
+The panel exposes two controls when it is on:
+
+- **Trigger** — how fast the ball must move before a flick coasts, in notches
+  per second (default 12). Lower is easier to trigger.
+- **Coast** — how far it keeps going, in percent (default 100). Higher is
+  longer.
 
 ### Choosing the device
 
@@ -241,10 +250,12 @@ button, and the bar icon is dimmed:
     "axis_lock": true,          // a gesture stays on its dominant axis
     "axis_window_seconds": 0.25,
     "hi_res": true,             // smooth scrolling; false = classic wheel clicks
-    "inertia": false            // coast after a fast flick
+    "inertia": false,           // coast after a fast flick
+    "inertia_trigger": 12,      // notches/s needed to start coasting
+    "inertia_strength": 100     // coast length, percent (100 = default)
   },
 
-  "sniper_button": 0,           // hold this button to snipe (0 = off)
+  "sniper_button": 0,           // spare mouse button code; learn it in the panel
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
   "hold_max_seconds": 60        // safety cap for a stuck momentary hold
@@ -273,6 +284,7 @@ omarchy-scrollmode devices       # list pointing devices (active is marked *)
 omarchy-scrollmode use <id>      # make a device the active one
 omarchy-scrollmode rescan        # re-read the connected devices
 omarchy-scrollmode set <path> <value>
+omarchy-scrollmode learn         # capture a spare mouse button for sniper
 omarchy-scrollmode reset         # restore the defaults
 omarchy-scrollmode reload
 omarchy-scrollmode hotkey [remove]
@@ -280,7 +292,9 @@ omarchy-scrollmode config        # print the config path
 ```
 
 `set` validates keys and ranges, writes the JSON atomically and reloads the
-daemon: `omarchy-scrollmode set scroll.counts_per_notch 60`.
+daemon: `omarchy-scrollmode set scroll.counts_per_notch 60`. `learn` waits for a
+spare mouse button, rejects left/right/middle and Back/Forward, and writes
+`sniper_button` for you.
 
 ## How it works
 

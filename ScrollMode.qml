@@ -57,13 +57,21 @@ Ui.Panel {
   readonly property bool present: !!(status && status.present === true)
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
-  readonly property bool sniperAvailable: !!(status && status.sniperButton === true)
+  readonly property bool sniperAvailable: !!(status && status.sniperAvailable === true)
   readonly property int sniperCode: (status && Number(status.sniperCode)) ? Number(status.sniperCode) : 0
+  readonly property bool learning: !!(status && status.learning === true)
+  readonly property string learnError: (status && status.learnError) ? String(status.learnError) : ""
   readonly property string sniperButtonName: {
     var code = root.sniperCode
-    if (code === 275 || code === 278) return strings.t("button.back")
-    if (code === 276 || code === 277) return strings.t("button.forward")
-    return strings.t("button.other")
+    if (code === 279) return strings.t("button.task")
+    if (code === 280) return strings.t("button.extra")
+    if (code > 0) return strings.t("button.number").arg(code)
+    return strings.t("button.none")
+  }
+  readonly property string learnErrorText: {
+    if (root.learnError === "reserved") return strings.t("menu.sniperReserved")
+    if (root.learnError === "timeout") return strings.t("menu.sniperTimeout")
+    return ""
   }
 
   readonly property var deviceOptions: {
@@ -252,7 +260,7 @@ Ui.Panel {
     open: root.opened
     focusTarget: keys
     contentWidth: fittedContentWidth(Style.space(340))
-    contentHeight: fittedContentHeight(Math.max(keys.implicitHeight, Style.space(120)), Style.space(900))
+    contentHeight: fittedContentHeight(Math.max(keys.implicitHeight, Style.space(120)), Style.space(1030))
 
     Ui.PanelKeyCatcher {
       id: keys
@@ -613,14 +621,91 @@ Ui.Panel {
             onClicked: root.setValue("scroll.inertia", !root.bool("scroll.inertia"))
           }
 
-          ToggleRow {
+          SliderRow {
+            visible: root.bool("scroll.inertia")
+            label: strings.t("menu.inertiaTrigger")
+            help: strings.t("help.inertiaTrigger")
+            valueText: strings.t("menu.perSecond").arg(Math.round(sliderValue))
+            from: 4
+            to: 30
+            step: 1
+            tickCount: 14
+            integer: true
+            source: Number(root.value("scroll.inertia_trigger", 12))
+            onCommit: function(v) { root.setValue("scroll.inertia_trigger", v) }
+          }
+
+          SliderRow {
+            visible: root.bool("scroll.inertia")
+            label: strings.t("menu.inertiaCoast")
+            help: strings.t("help.inertiaCoast")
+            valueText: Math.round(sliderValue) + " %"
+            from: 50
+            to: 200
+            step: 10
+            tickCount: 16
+            integer: true
+            source: Number(root.value("scroll.inertia_strength", 100))
+            onCommit: function(v) { root.setValue("scroll.inertia_strength", v) }
+          }
+
+          Column {
             visible: root.sniperAvailable
-            label: strings.t("menu.sniperButton").arg(root.sniperButtonName)
-            help: strings.t("help.sniperButton").arg(root.sniperButtonName)
-            checked: Number(root.value("sniper_button", 0)) > 0
-            onClicked: {
-              var on = Number(root.value("sniper_button", 0)) > 0
-              root.setValue("sniper_button", on ? 0 : (root.sniperCode || 275))
+            width: parent.width
+            spacing: Style.space(6)
+
+            ToggleRow {
+              visible: root.sniperCode > 0
+              label: strings.t("menu.sniperButton")
+              help: strings.t("help.sniperButton").arg(root.sniperButtonName)
+              checked: root.sniperCode > 0
+              onClicked: root.setValue("sniper_button", 0)
+            }
+
+            Row {
+              width: parent.width
+              spacing: Style.space(6)
+
+              Ui.Button {
+                width: parent.width - (sniperChooseHint.visible
+                  ? sniperChooseHint.width + parent.spacing : 0)
+                text: root.sniperCode > 0
+                  ? strings.t("menu.sniperChange")
+                  : strings.t("menu.sniperChoose")
+                bordered: true
+                foreground: Color.popups.text
+                onClicked: Quickshell.execDetached([root.cli, "learn"])
+              }
+
+              HintIcon {
+                id: sniperChooseHint
+                visible: root.sniperCode === 0
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("help.sniperChoose")
+              }
+            }
+
+            Text {
+              visible: root.learning
+              width: parent.width
+              text: strings.t("menu.sniperLearning")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.7
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              visible: !root.learning && root.learnErrorText !== ""
+              width: parent.width
+              text: root.learnErrorText
+              textFormat: Text.PlainText
+              color: root.armedColor
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
 
