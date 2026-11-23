@@ -635,12 +635,16 @@ class ScrollConverter:
                 return []
             self.inertia_active = True
             self.inertia_started = now
-            # Account for the quiet gap before the coast starts instead of
-            # throwing the first 40-50 ms away on a 1 ms tick.
-            self.last_tick = max(self.last_motion, now - 0.05)
+            # Do not turn the whole quiet gap into one large first frame: that
+            # reads as a second kick after the app has already animated the
+            # real scroll. One normal frame's worth is enough.
+            self.last_tick = max(self.last_motion, now - 0.016)
             self.inertia_axis = self.axis if self.axis_lock else None
             self._coast_at_peak()
-            log(f"inertia {self.peak_speed:.0f} counts/s")
+            log(
+                f"inertia {self.peak_speed:.0f} counts/s "
+                f"after {(now - self.last_motion) * 1000:.0f} ms"
+            )
 
         dt = min(0.05, max(0.001, now - self.last_tick))
         self.last_tick = now

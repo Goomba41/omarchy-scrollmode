@@ -31,7 +31,8 @@ All notable changes to this project are documented here. The format follows
   tail.
 - A small movement during a coast clears the stale velocity and peak, so it
   cannot start a second coast from the same flick. This removes the occasional
-  double kick.
+  double kick. The first coast frame is capped to one normal 16 ms frame so the
+  quiet gap does not read as another kick either.
 - Device enumeration is paused while scrolling. Scanning every input node took
   roughly 250 ms on a normal desktop; during a grabbed flick that stalled the
   event stream, compressed many frames into one burst and made the velocity
