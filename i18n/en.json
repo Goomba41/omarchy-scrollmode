@@ -46,5 +46,6 @@
   "menu.sniperButton": "Sniper on side button",
   "mode.pointer": "Pointer",
   "mode.scroll": "Scroll",
-  "mode.sniper": "Sniper"
+  "mode.sniper": "Sniper",
+  "mode.none": "No device"
 }

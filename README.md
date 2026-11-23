@@ -134,7 +134,7 @@ held. Bindings use physical keycodes, so they work on remapped layouts
 | --- | --- |
 | left click | open or close the settings panel |
 | right click | nothing (kept free) |
-| dimmed ball | no pointing device is grabbed right now |
+| gray ball | no pointing device is grabbed, or the service is stopped |
 
 The ball itself shows the mode: **red** pointer, **blue** scroll, **amber**
 sniper. Pointer/scroll is toggled with `ALT + Z`, sniper with `ALT + S`; the
@@ -150,6 +150,10 @@ vertical axis, so its texture slides across the sphere and vanishes behind it.
 <p align="center">
   <img src="docs/menu.png" alt="Settings panel" width="340">
 </p>
+
+When no pointing device is available (or the service is stopped), the ball and
+the header badge turn gray and the badge reads **No device** with a broken-link
+icon.
 
 Every control writes `~/.config/omarchy/scrollmode.json` through
 `omarchy-scrollmode set` and the daemon reloads immediately. Sliders snap to

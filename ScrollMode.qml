@@ -25,10 +25,15 @@ Ui.Panel {
   readonly property string mode: String(stateFile.text() || "").trim()
   readonly property bool scrolling: mode === "scroll" || mode === "sniper"
   readonly property bool sniper: mode === "sniper"
-  readonly property color ballColor: root.sniper ? "#d9a441" : (root.scrolling ? "#5f87d9" : "#d95f5f")
-  readonly property string modeLabel: root.sniper
-    ? strings.t("mode.sniper")
-    : (root.scrolling ? strings.t("mode.scroll") : strings.t("mode.pointer"))
+  readonly property color idleColor: "#8f9aa3"
+  readonly property color modeColor: root.sniper ? "#d9a441" : (root.scrolling ? "#5f87d9" : "#d95f5f")
+  readonly property bool hasDevice: root.present && root.serviceState === "active"
+  readonly property color ballColor: root.hasDevice ? root.modeColor : root.idleColor
+  readonly property string modeLabel: !root.hasDevice
+    ? strings.t("mode.none")
+    : (root.sniper
+      ? strings.t("mode.sniper")
+      : (root.scrolling ? strings.t("mode.scroll") : strings.t("mode.pointer")))
 
   property Component ballIcon: Component {
     TrackballBall {
@@ -216,7 +221,6 @@ Ui.Panel {
     anchors.fill: parent
     bar: root.bar
     iconComponent: root.ballIcon
-    dimmed: !root.present
     tooltipText: root.serviceState !== "active"
       ? (root.serviceState === "missing" ? strings.t("tip.uninstalled") : strings.t("tip.stopped"))
       : !root.present
@@ -308,7 +312,9 @@ Ui.Panel {
                   spacing: Style.space(3)
 
                   Text {
-                    text: root.sniper ? "\uf05b" : (root.scrolling ? "\uf07d" : "\uf245")
+                    text: !root.hasDevice
+                      ? "\uf127"
+                      : (root.sniper ? "\uf05b" : (root.scrolling ? "\uf07d" : "\uf245"))
                     textFormat: Text.PlainText
                     color: root.ballColor
                     font.family: Style.font.family

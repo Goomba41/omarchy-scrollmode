@@ -40,6 +40,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- With no pointing device available, or with the service stopped, the ball and
+  the header badge turn gray and the badge shows a broken-link icon and
+  "No device" / "Нет устройства" instead of a mode.
 - Left click on the bar widget opens (or closes) the settings panel; right click
   no longer does anything. The old single/double click mode switching and its
   230 ms delay are gone; modes are switched with `ALT + Z`, `ALT + S` or the
