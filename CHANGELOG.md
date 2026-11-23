@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-11-23
+
+### Added
+
+- Drawn trackball icon (`TrackballBall.qml`): a shaded sphere with a static
+  highlight and a rotating pattern, instead of the three Nerd Font glyphs. Red
+  for pointer, blue for scroll, amber for sniper, with a micro-dot in the bar.
+- The settings header now shows the same ball at 44 px next to the title and the
+  device name in two lines. Opening the panel spins it fast for about a second,
+  eases down and then keeps turning slowly (one turn per ten seconds) while the
+  panel is open. `omarchy toggle animations` turns the spin off.
+- Sniper on the side mouse button: holding `BTN_SIDE` (configurable, default
+  275) while scrolling switches to the sniper speed for as long as it is held;
+  releasing restores scroll. The button is swallowed so apps do not see "back".
+- Optional inertia: after a fast flick the scroll keeps going and decays to a
+  stop. Off by default, and slow movement never triggers it.
+- Panel toggles for inertia and for the sniper button.
+
+### Changed
+
+- Left click on the bar widget opens (or closes) the settings panel; right click
+  no longer does anything. The old single/double click mode switching and its
+  230 ms delay are gone; modes are switched with `ALT + Z`, `ALT + S` or the
+  sniper button.
+
+### Tests
+
+- `tests/test_frame.py` covers the sniper button (press, slower output,
+  swallowed event, release).
+- `scrollmoded.py --selftest` covers inertia: a fast flick coasts, slow motion
+  does not.
+- An end-to-end check with a fake uinput pointer verified plain scroll, the
+  sniper button and inertia against the running daemon.
+
 ## [1.2.0] — 2026-11-23
 
 ### Added

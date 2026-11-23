@@ -54,6 +54,12 @@ LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
 HIDPP_SW_ID = 0x0A
 HIDPP_NAME_FEATURE = 0x0005
 HIDPP_NAME_KEYS = ("m575", "ergo", "mx ", "trackball", "mouse")
+
+# Inertia: a fast flick keeps scrolling after the ball stops, decaying.
+INERTIA_MIN_SPEED = 1400.0     # counts/s needed to start coasting
+INERTIA_STOP_SPEED = 90.0      # counts/s at which coasting ends
+INERTIA_DECAY = 6.0            # per second, exponential
+INERTIA_MAX_SECONDS = 1.6
 KEYBOARD_HINTS = ("keyboard", "keypad", "kbd")
 # Models that are trackballs even when the advertised name omits the word.
 TRACKBALL_KEYS = (
@@ -98,7 +104,9 @@ DEFAULTS = {
         "axis_lock": True,
         "axis_window_seconds": 0.25,
         "hi_res": True,
+        "inertia": False,
     },
+    "sniper_button": 275,
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
@@ -417,6 +425,7 @@ class ScrollConverter:
         self.axis_lock = True
         self.axis_window = 0.25
         self.hi_res = True
+        self.inertia = False
         self.reset()
 
     def configure(self, cfg: dict) -> None:
@@ -428,6 +437,7 @@ class ScrollConverter:
         self.axis_lock = bool(scroll.get("axis_lock", True))
         self.axis_window = max(0.0, float(scroll.get("axis_window_seconds", 0.25)))
         self.hi_res = bool(scroll.get("hi_res", True))
+        self.inertia = bool(scroll.get("inertia", False))
 
     def reset(self) -> None:
         self.acc_v = 0.0
@@ -436,6 +446,12 @@ class ScrollConverter:
         self.hr_h = 0
         self.axis: str | None = None
         self.last_motion = 0.0
+        self.vel_x = 0.0
+        self.vel_y = 0.0
+        self.inertia_active = False
+        self.inertia_axis: str | None = None
+        self.inertia_started = 0.0
+        self.last_tick = 0.0
 
     def _pick_axis(self, dx: int, dy: int, now: float) -> str | None:
         if not self.axis_lock:
@@ -504,6 +520,7 @@ class ScrollConverter:
         if dx == 0 and dy == 0:
             return []
 
+        previous = self.last_motion
         axis = self._pick_axis(dx, dy, now)
         if axis == "x":
             dy = 0
@@ -512,9 +529,49 @@ class ScrollConverter:
         if dx == 0 and dy == 0:
             return []
 
+        dt = max(0.001, now - previous) if previous else 0.016
+        self.vel_x = self.vel_x * 0.65 + (dx / dt) * 0.35
+        self.vel_y = self.vel_y * 0.65 + (dy / dt) * 0.35
+        self.inertia_active = False
         self.last_motion = now
+
         vertical = -dy if not self.invert_v else dy
         horizontal = dx if not self.invert_h else -dx
+        return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
+
+    def inertia_events(self, now: float) -> list[tuple[int, int, int]]:
+        """Coast after a flick, decaying to a stop."""
+        if not self.inertia:
+            return []
+
+        if not self.inertia_active:
+            if now - self.last_motion < 0.04:
+                return []
+            if math.hypot(self.vel_x, self.vel_y) < INERTIA_MIN_SPEED:
+                return []
+            self.inertia_active = True
+            self.inertia_started = now
+            self.last_tick = now
+            self.inertia_axis = self.axis if self.axis_lock else None
+
+        dt = min(0.05, max(0.001, now - self.last_tick))
+        self.last_tick = now
+        decay = math.exp(-INERTIA_DECAY * dt)
+        self.vel_x *= decay
+        self.vel_y *= decay
+
+        vx, vy = self.vel_x, self.vel_y
+        if self.inertia_axis == "x":
+            vy = 0.0
+        elif self.inertia_axis == "y":
+            vx = 0.0
+
+        if math.hypot(vx, vy) < INERTIA_STOP_SPEED or now - self.inertia_started > INERTIA_MAX_SECONDS:
+            self.inertia_active = False
+            return []
+
+        vertical = (-vy if not self.invert_v else vy) * dt
+        horizontal = (vx if not self.invert_h else -vx) * dt
         return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
 
 
@@ -543,6 +600,7 @@ class Daemon:
         self.activated_at = 0.0
         self.last_click_exit = 0.0
         self.press = None
+        self.button_hold: str | None = None
         self.device_name = ""
         self.active_id = ""
         self.last_status = ""
@@ -741,6 +799,7 @@ class Daemon:
 
     def deactivate(self) -> str:
         self.press = None
+        self.button_hold = None
         if self.mode == "pointer":
             return self.mode
         self.mode = "pointer"
@@ -883,8 +942,25 @@ class Daemon:
         dy = 0
         passthrough = []
         click = False
+        sniper_button = int(self.cfg.get("sniper_button") or 0)
 
         for event in frame:
+            # A mouse button held down acts as a temporary sniper trigger: press
+            # slows the scroll down, release restores the previous mode. The
+            # button is swallowed so it cannot trigger "back" in an app.
+            if sniper_button and event.type == ecodes.EV_KEY and event.code == sniper_button:
+                if event.value == 1 and self.button_hold is None:
+                    self.button_hold = self.mode
+                    if self.mode == "scroll":
+                        self._set_mode("sniper")
+                        log("sniper button held")
+                elif event.value == 0 and self.button_hold is not None:
+                    previous = self.button_hold
+                    self.button_hold = None
+                    if self.mode != "pointer":
+                        self._set_mode(previous)
+                        log(f"sniper button released, back to {previous}")
+                continue
             if event.type == ecodes.EV_REL and event.code in (ecodes.REL_X, ecodes.REL_Y):
                 if event.code == ecodes.REL_X:
                     dx += event.value
@@ -915,6 +991,20 @@ class Daemon:
         if click and self.cfg.get("exit_on_click"):
             self.last_click_exit = now
             self.deactivate()
+
+    def flush_inertia(self) -> None:
+        """Emit the coasting events after a flick, on a timer of its own."""
+        if self.ui is None or self.mode not in ("scroll", "sniper"):
+            return
+        events = self.converter.inertia_events(time.monotonic())
+        if not events:
+            return
+        try:
+            for event_type, code, value in events:
+                self.ui.write(event_type, code, value)
+            self.ui.syn()
+        except OSError as exc:
+            raise DeviceLost() from exc
 
     # -- control socket ----------------------------------------------------
 
@@ -1064,7 +1154,11 @@ class Daemon:
     def serve(self) -> None:
         while self.running:
             pending = self.press is not None and not self.press["fired"]
-            for key, _ in self.sel.select(timeout=0.05 if pending else 0.2):
+            if self.converter.inertia_active:
+                timeout = 0.016
+            else:
+                timeout = 0.05 if pending else 0.2
+            for key, _ in self.sel.select(timeout=timeout):
                 if key.data == "device":
                     self.read_device()
                 elif key.data == "server":
@@ -1072,6 +1166,7 @@ class Daemon:
             if self.rescan_requested:
                 self.rescan_requested = False
                 return
+            self.flush_inertia()
             self.tick(time.monotonic())
 
     def close_device(self) -> None:
@@ -1261,6 +1356,40 @@ def selftest() -> int:
     ]
     print(f"axis switch: {switched}")
     assert switched and switched[-1][0] == REL_HWHEEL_HI_RES, switched
+
+    # Inertia coasts only after a fast flick, and it decays to a stop.
+    converter = make({"inertia": True})
+    now += 1.0
+    for _ in range(6):  # 6 x 60 counts in ~50 ms: a flick
+        converter.events(0, 60, now)
+        now += 0.008
+    coast = 0
+    ticks = 0
+    for _ in range(300):
+        now += 0.016
+        events = converter.inertia_events(now)
+        if events:
+            ticks += 1
+        for _event_type, code, value in events:
+            if code == REL_WHEEL_HI_RES:
+                coast += value
+    print(f"inertia: {coast} hi-res units over {ticks} ticking frames")
+    assert coast < 0, coast
+    assert not converter.inertia_active, "inertia never stopped"
+    assert ticks * 0.016 < 3.0, "inertia overstayed"
+
+    # Slow, deliberate movement must not start coasting.
+    converter = make({"inertia": True})
+    now += 10.0
+    for _ in range(5):
+        converter.events(0, 4, now)
+        now += 0.05
+    coast = 0
+    for _ in range(60):
+        now += 0.016
+        coast += len(converter.inertia_events(now))
+    print(f"inertia from slow motion: {coast} events (expect 0)")
+    assert coast == 0, coast
 
     print("selftest: ok")
     return 0

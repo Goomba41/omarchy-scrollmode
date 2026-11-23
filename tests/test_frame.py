@@ -97,8 +97,9 @@ def main():
     assert hi == [-60], hi
 
     # Any mouse button leaves scroll mode when exit_on_click is on, and the
-    # click is still forwarded before the grab is dropped.
-    for code in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE, ecodes.BTN_SIDE):
+    # click is still forwarded before the grab is dropped. BTN_SIDE is the
+    # momentary sniper trigger by default, so it is checked separately below.
+    for code in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE, ecodes.BTN_EXTRA):
         daemon = fresh()
         daemon.cfg["exit_on_click"] = True
         ui = daemon.ui
@@ -106,6 +107,30 @@ def main():
         assert daemon.mode == "pointer", (code, daemon.mode)
         assert (ecodes.EV_KEY, code, 1) in ui.events, ui.events
     print("exit on any button: ok")
+
+    # The side button is a momentary sniper trigger: pressing slows the scroll
+    # down, releasing restores scroll, and the button itself is swallowed.
+    daemon = fresh("scroll")
+    daemon.cfg["scroll"]["sniper_multiplier"] = 0.5
+    ui = daemon.ui
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 1)])
+    assert daemon.mode == "sniper", daemon.mode
+    assert not ui.events, ui.events
+    daemon.handle_frame([event(ecodes.EV_REL, ecodes.REL_Y, 85)])
+    hi = [v for (t, c, v) in ui.events if c == scrollmoded.REL_WHEEL_HI_RES]
+    print("sniper button:", daemon.mode, hi)
+    assert hi == [-60], hi
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 0)])
+    assert daemon.mode == "scroll", daemon.mode
+    assert not [1 for (t, c, _v) in ui.events if t == ecodes.EV_KEY], ui.events
+    print("sniper button: ok")
+
+    # Disabled trigger: the side button behaves like any other click.
+    daemon = fresh("scroll")
+    daemon.cfg["sniper_button"] = 0
+    daemon.cfg["exit_on_click"] = True
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_SIDE, 1)])
+    assert daemon.mode == "pointer", daemon.mode
 
     # Releasing a button does not exit.
     daemon = fresh()

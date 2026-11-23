@@ -3,7 +3,7 @@
 Turn any trackball (or mouse) into a scroll wheel, with a slower "sniper"
 mode, for [Omarchy](https://omarchy.org/). Press a key and the ball scrolls
 instead of moving the cursor; a bar widget shows the mode and opens the
-settings on right-click.
+settings on a left click.
 
 <p align="center">
   <img src="docs/menu.png" alt="Settings panel" width="340">
@@ -23,8 +23,13 @@ settings on right-click.
   you pick the one to grab. Selection survives reboots.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
+- **Drawn trackball icon**: a sphere with a real highlight and a rotating
+  pattern, red for pointer, blue for scroll, amber for sniper, with a micro-dot
+  in the bar. The settings header shows the same ball, spun fast and then slowly
+  while the panel is open.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, hi-res,
-  leave-on-click, hold threshold, auto-exit, reset, open config.
+  leave-on-click, inertia, sniper button, hold threshold, auto-exit, reset,
+  open config.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -45,7 +50,7 @@ can install and update it like any other plugin.
 omarchy plugin add https://github.com/Goomba41/omarchy-scrollmode.git --enable
 ```
 
-The widget appears in the bar. Right-click it once: while the daemon is missing,
+The widget appears in the bar. Left-click it once: while the daemon is missing,
 the panel shows a setup view with an **Install…** button.
 
 <p align="center">
@@ -126,12 +131,16 @@ held. Bindings use physical keycodes, so they work on remapped layouts
 
 | Action | Result |
 | --- | --- |
-| left click | pointer ↔ scroll (double click: scroll ↔ sniper) |
-| right click | settings panel |
-| dimmed icon | no pointing device is grabbed right now |
+| left click | open or close the settings panel |
+| right click | nothing (kept free) |
+| dimmed ball | no pointing device is grabbed right now |
+
+The ball itself shows the mode: **red** pointer, **blue** scroll, **amber**
+sniper, with a small light dot in the corner. Pointer/scroll is toggled with
+`ALT + Z`, sniper with `ALT + S`; the bar no longer changes the mode.
 
 <p align="center">
-  <img src="docs/icons.png" alt="pointer, scroll and sniper icons" width="120">
+  <img src="docs/icons.png" alt="pointer, scroll and sniper balls" width="120">
 </p>
 
 ### Settings panel
@@ -147,6 +156,19 @@ their step (5 % for speeds, 50 ms for the hold threshold).
 Every action confirms itself: the button, slider title, toggle or auto-exit chip
 flashes a green **✓ Done** for a moment, and "Reset to defaults" turns yellow
 ("Click again to reset") while it waits for the second click.
+
+### Sniper on the side button
+
+While scrolling, holding the side mouse button (`BTN_SIDE`, default 275) slows
+the scroll down to the sniper speed; releasing it returns to normal scrolling.
+The button is swallowed while it does this, so it cannot trigger "back" in a
+browser. Turn it off in the panel or set `"sniper_button": 0`.
+
+### Inertia
+
+With inertia on, a fast flick keeps scrolling for a moment and then decays to a
+stop, instead of stopping the instant the ball does. It is off by default and
+only starts on real flicks, so slow, precise movement is never affected.
 
 ### Choosing the device
 
@@ -201,9 +223,11 @@ button, and the bar icon is dimmed:
     "invert_horizontal": false,
     "axis_lock": true,          // a gesture stays on its dominant axis
     "axis_window_seconds": 0.25,
-    "hi_res": true              // smooth scrolling; false = classic wheel clicks
+    "hi_res": true,             // smooth scrolling; false = classic wheel clicks
+    "inertia": false            // coast after a fast flick
   },
 
+  "sniper_button": 275,         // hold this button to snipe (0 = off)
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
   "hold_max_seconds": 60        // safety cap for a stuck momentary hold
@@ -269,6 +293,11 @@ omarchy-scrollmode (CLI) ──unix socket──▶ scrollmoded
   accumulator.
 - The axis lock keeps a gesture on its dominant axis; a clean direction change
   switches immediately, so vertical-then-horizontal scrolling works.
+- With inertia on, the daemon keeps the ball's velocity after the last frame and
+  emits decaying wheel events until the speed falls below a threshold or a new
+  movement arrives.
+- The side button is handled inside the grabbed stream: it switches the
+  converter to the sniper multiplier only while held and is not replayed.
 - Device names and the device list come from `/run/udev/data` plus HID++ 2.0
   `DeviceName` (`0x0005`) over the receiver's hidraw interface.
 
@@ -315,6 +344,7 @@ The repository layout:
 | Path | What |
 | --- | --- |
 | `manifest.json`, `ScrollMode.qml`, `i18n/` | the Omarchy plugin, at the root so `omarchy plugin add` works |
+| `TrackballBall.qml` | the drawn sphere used in the bar and in the panel header |
 | `daemon/scrollmoded.py` | the daemon |
 | `daemon/omarchy-scrollmode` | the CLI |
 | `config.default.json` | first-run config |

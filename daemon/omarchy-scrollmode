@@ -72,6 +72,8 @@ SETTINGS = {
     "scroll.axis_lock": ("bool",),
     "scroll.axis_window_seconds": ("number", 0.05, 2.0),
     "scroll.hi_res": ("bool",),
+    "scroll.inertia": ("bool",),
+    "sniper_button": ("number", 0, 767),
     "exit_on_click": ("bool",),
     "auto_exit_seconds": ("number", 0, 3600),
     "hold_threshold_ms": ("number", 100, 1000),

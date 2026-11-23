@@ -5,8 +5,8 @@ import qs.Ui as Ui
 import qs.Commons
 import qs.Commons as Commons
 
-// Scroll modes: pointer, scroll, sniper. Left click toggles pointer/scroll
-// (double click: sniper). Right click opens the settings panel.
+// Scroll modes: pointer, scroll, sniper. Left click opens the settings panel;
+// the daemon also turns a held side button into a temporary sniper trigger.
 //
 // The daemon reports every pointing device in /run/omarchy-scrollmode/status.json.
 // Settings stay hidden until the device picked in the dropdown is actually
@@ -25,6 +25,15 @@ Ui.Panel {
   readonly property string mode: String(stateFile.text() || "").trim()
   readonly property bool scrolling: mode === "scroll" || mode === "sniper"
   readonly property bool sniper: mode === "sniper"
+  readonly property color ballColor: root.sniper ? "#d9a441" : (root.scrolling ? "#5f87d9" : "#d95f5f")
+
+  property Component ballIcon: Component {
+    TrackballBall {
+      size: Style.bar.iconSize
+      ballColor: root.ballColor
+      dot: true
+    }
+  }
 
   readonly property var status: {
     var text = statusFile.text() || ""
@@ -130,14 +139,6 @@ Ui.Panel {
     }
   }
 
-  function toggleScroll() {
-    Quickshell.execDetached([root.cli, "toggle"])
-  }
-
-  function toggleSniper() {
-    Quickshell.execDetached([root.cli, "sniper"])
-  }
-
   Component.onCompleted: {
     syncPending()
     installProbe.running = true
@@ -208,20 +209,11 @@ Ui.Panel {
     }
   }
 
-  // A single left click acts after this delay, so a double click can win.
-  Timer {
-    id: clickDelay
-    interval: 230
-    onTriggered: root.toggleScroll()
-  }
-
   Ui.BarIconButton {
     id: button
     anchors.fill: parent
     bar: root.bar
-    text: root.sniper ? "\uf05b" : (root.scrolling ? "\uf07d" : "\uf245")
-    active: root.scrolling
-    activeColor: root.sniper ? Color.urgent : Color.accent
+    iconComponent: root.ballIcon
     dimmed: !root.present
     tooltipText: root.serviceState !== "active"
       ? (root.serviceState === "missing" ? strings.t("tip.uninstalled") : strings.t("tip.stopped"))
@@ -235,21 +227,7 @@ Ui.Panel {
     Accessible.role: Accessible.Button
     Accessible.name: root.activeName !== "" ? root.activeName : "Trackball"
     onPressed: function(button) {
-      if (button === Qt.RightButton) {
-        root.toggle()
-        return
-      }
-      if (button !== Qt.LeftButton) return
-      if (root.opened) {
-        root.close()
-        return
-      }
-      if (clickDelay.running) {
-        clickDelay.stop()
-        root.toggleSniper()
-      } else {
-        clickDelay.start()
-      }
+      if (button === Qt.LeftButton) root.toggle()
     }
   }
 
@@ -276,32 +254,44 @@ Ui.Panel {
         // -- header ------------------------------------------------------
         Item {
           width: parent.width
-          height: Math.max(titleText.implicitHeight, deviceLabel.implicitHeight)
+          height: Math.max(headerBall.height, headerText.implicitHeight)
 
-          Text {
-            id: titleText
-            anchors.left: parent.left
-            anchors.verticalCenter: parent.verticalCenter
-            text: strings.t("menu.title")
-            textFormat: Text.PlainText
-            color: Color.popups.text
-            font.family: Style.font.family
-            font.pixelSize: Style.font.title
+          TrackballBall {
+            id: headerBall
+            size: Style.space(44)
+            ballColor: root.ballColor
+            spinning: root.opened
+            shadow: true
           }
 
-          Text {
-            id: deviceLabel
-            anchors.left: titleText.right
-            anchors.leftMargin: Style.space(8)
+          Column {
+            id: headerText
+            anchors.left: headerBall.right
+            anchors.leftMargin: Style.space(12)
             anchors.verticalCenter: parent.verticalCenter
-            width: Math.max(0, parent.width - titleText.implicitWidth - Style.space(8))
-            text: "· " + (root.activeName !== "" ? root.activeName : strings.t("menu.notConnected"))
-            textFormat: Text.PlainText
-            color: Color.popups.text
-            opacity: 0.5
-            font.family: Style.font.family
-            font.pixelSize: Style.font.caption
-            elide: Text.ElideRight
+            width: Math.max(0, parent.width - headerBall.width - Style.space(12))
+            spacing: Style.space(2)
+
+            Text {
+              width: parent.width
+              text: strings.t("menu.title")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              elide: Text.ElideRight
+            }
+
+            Text {
+              width: parent.width
+              text: root.activeName !== "" ? root.activeName : strings.t("menu.notConnected")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.5
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
           }
         }
 
@@ -552,6 +542,19 @@ Ui.Panel {
             label: strings.t("menu.exitOnClick")
             checked: root.bool("exit_on_click")
             onClicked: root.setValue("exit_on_click", !root.bool("exit_on_click"))
+          }
+
+          ToggleRow {
+            label: strings.t("menu.inertia")
+            checked: root.bool("scroll.inertia")
+            onClicked: root.setValue("scroll.inertia", !root.bool("scroll.inertia"))
+          }
+
+          ToggleRow {
+            label: strings.t("menu.sniperButton")
+            checked: Number(root.value("sniper_button", 275)) > 0
+            onClicked: root.setValue("sniper_button",
+              Number(root.value("sniper_button", 275)) > 0 ? 0 : 275)
           }
 
           Ui.PanelSeparator { width: parent.width }
