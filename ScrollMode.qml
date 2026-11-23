@@ -58,6 +58,10 @@ Ui.Panel {
   readonly property color doneColor: "#a7c080"
   readonly property color armedColor: "#dbbc7f"
 
+  // The daemon lives outside the plugin (root, /usr/local, systemd). The panel
+  // offers a one-click install that opens a terminal for the sudo prompt.
+  property string serviceState: "active"  // active | stopped | missing
+
   implicitWidth: button.implicitWidth
   implicitHeight: button.implicitHeight
 
@@ -91,6 +95,11 @@ Ui.Panel {
 
   function rescan() {
     Quickshell.execDetached([root.cli, "rescan"])
+  }
+
+  function installService() {
+    var script = decodeURIComponent(Qt.resolvedUrl("install.sh").toString().replace(/^file:\/\//, ""))
+    Quickshell.execDetached(["omarchy-launch-terminal", "bash", script])
   }
 
   function syncPending() {
@@ -129,8 +138,33 @@ Ui.Panel {
     Quickshell.execDetached([root.cli, "sniper"])
   }
 
-  Component.onCompleted: syncPending()
+  Component.onCompleted: {
+    syncPending()
+    installProbe.running = true
+  }
   onStatusChanged: syncPending()
+
+  Process {
+    id: installProbe
+    command: ["/bin/sh", "-c", "if ! test -x /usr/local/bin/omarchy-scrollmode; then echo missing; elif systemctl is-active --quiet omarchy-scrollmode; then echo active; else echo stopped; fi"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var value = String(text).trim()
+        if (value === "missing" || value === "stopped" || value === "active")
+          root.serviceState = value
+      }
+    }
+  }
+
+  Timer {
+    interval: 5000
+    repeat: true
+    running: true
+    onTriggered: {
+      if (!installProbe.running) installProbe.running = true
+    }
+  }
 
   FileView {
     id: stateFile
@@ -189,7 +223,9 @@ Ui.Panel {
     active: root.scrolling
     activeColor: root.sniper ? Color.urgent : Color.accent
     dimmed: !root.present
-    tooltipText: !root.present
+    tooltipText: root.serviceState !== "active"
+      ? (root.serviceState === "missing" ? strings.t("tip.uninstalled") : strings.t("tip.stopped"))
+      : !root.present
       ? strings.t("tip.none")
       : root.sniper
         ? strings.t("tip.sniper")
@@ -269,9 +305,45 @@ Ui.Panel {
           }
         }
 
+        // -- background service missing ---------------------------------
+        Column {
+          visible: root.serviceState !== "active"
+          width: parent.width
+          spacing: Style.space(8)
+
+          Text {
+            width: parent.width
+            text: root.serviceState === "missing" ? strings.t("setup.title") : strings.t("setup.stoppedTitle")
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+            wrapMode: Text.WordWrap
+          }
+
+          Text {
+            width: parent.width
+            text: root.serviceState === "missing" ? strings.t("setup.body") : strings.t("setup.stoppedBody")
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            opacity: 0.6
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
+          Ui.Button {
+            width: parent.width
+            text: root.serviceState === "missing" ? strings.t("setup.install") : strings.t("setup.start")
+            bordered: true
+            foreground: Color.popups.text
+            onClicked: root.installService()
+          }
+        }
+
         // -- device picker ----------------------------------------------
         Column {
-          visible: !root.noDevices
+          visible: root.serviceState === "active" && !root.noDevices
           width: parent.width
           spacing: Style.space(4)
 
@@ -341,11 +413,14 @@ Ui.Panel {
           }
         }
 
-        Ui.PanelSeparator { width: parent.width; visible: !root.noDevices }
+        Ui.PanelSeparator {
+          width: parent.width
+          visible: root.serviceState === "active" && !root.noDevices
+        }
 
         // -- no devices at all ------------------------------------------
         Column {
-          visible: root.noDevices
+          visible: root.serviceState === "active" && root.noDevices
           width: parent.width
           spacing: Style.space(8)
 
@@ -379,7 +454,7 @@ Ui.Panel {
 
         // -- picked device not applied yet -------------------------------
         Column {
-          visible: root.pendingMismatch
+          visible: root.serviceState === "active" && root.pendingMismatch
           width: parent.width
           spacing: Style.space(6)
 
@@ -408,7 +483,7 @@ Ui.Panel {
         // -- settings ----------------------------------------------------
         Column {
           id: settings
-          visible: !root.noDevices && !root.pendingMismatch
+          visible: root.serviceState === "active" && !root.noDevices && !root.pendingMismatch
           width: parent.width
           spacing: Style.space(10)
 

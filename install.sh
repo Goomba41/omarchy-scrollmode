@@ -100,10 +100,16 @@ say "installing the bar widget"
 if [[ "$PLUGIN_SRC" -ef "$PLUGIN_DST" ]]; then
   say "the plugin is already in place (installed from git)"
 else
-  mkdir -p "$PLUGIN_DST/i18n"
+  # A full copy, not just the widget: the panel's "Install…" button runs
+  # install.sh from the plugin directory, so it has to be there.
+  mkdir -p "$PLUGIN_DST/i18n" "$PLUGIN_DST/daemon"
   install -m644 "$PLUGIN_SRC/manifest.json" "$PLUGIN_DST/manifest.json"
   install -m644 "$PLUGIN_SRC/ScrollMode.qml" "$PLUGIN_DST/ScrollMode.qml"
   install -m644 "$PLUGIN_SRC"/i18n/*.json "$PLUGIN_DST/i18n/"
+  install -m755 "$PLUGIN_SRC/install.sh" "$PLUGIN_DST/install.sh"
+  install -m755 "$PLUGIN_SRC/daemon/omarchy-scrollmode" "$PLUGIN_DST/daemon/omarchy-scrollmode"
+  install -m644 "$PLUGIN_SRC/daemon/scrollmoded.py" "$PLUGIN_DST/daemon/scrollmoded.py"
+  install -m644 "$PLUGIN_SRC/config.default.json" "$PLUGIN_DST/config.default.json"
 fi
 
 say "validating the plugin"

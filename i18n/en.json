@@ -33,5 +33,13 @@
   "tip.none": "Trackball: no pointing device — right-click for settings",
   "menu.refresh": "Refresh device list",
   "menu.hidden": "hidden: %1",
-  "menu.done": "Done"
+  "menu.done": "Done",
+  "setup.title": "Background service not installed",
+  "setup.body": "The widget is installed, but the daemon that reads the trackball is not. Install it once: your password is asked in the terminal.",
+  "setup.install": "Install…",
+  "tip.uninstalled": "Trackball: background service not installed — right-click to install",
+  "setup.stoppedTitle": "Background service is stopped",
+  "setup.stoppedBody": "The service is installed but not running. Start it once: your password is asked in the terminal.",
+  "setup.start": "Start…",
+  "tip.stopped": "Trackball: service stopped — right-click to start"
 }

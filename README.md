@@ -39,19 +39,39 @@ settings on right-click.
 The repository **is** the plugin: `manifest.json` sits at the root, so Omarchy
 can install and update it like any other plugin.
 
-### As an Omarchy plugin
+### As an Omarchy plugin (recommended)
 
 ```sh
 omarchy plugin add https://gitlab.com/<you>/omarchy-scrollmode.git --enable
+```
+
+The widget appears in the bar. Right-click it once: while the daemon is missing,
+the panel shows a setup view with an **Install…** button.
+
+<p align="center">
+  <img src="docs/menu-setup.png" alt="Install background service" width="340">
+</p>
+
+**Install…** opens a terminal with the bundled installer and asks for your
+password there. The daemon and its systemd unit are installed, the service
+starts, and within a second the widget switches to the normal settings view.
+No commands to copy.
+
+Why a terminal? Reading `/dev/input` and creating a `uinput` device needs root,
+and a shell plugin runs as your user. The installer is the only privileged
+step; the terminal shows exactly what runs. (`pkexec` is deliberately not used:
+it needs a running polkit agent, which is not guaranteed on every desktop.)
+
+The service lives outside the plugin, so after `omarchy plugin update` re-run
+the installer once (from the plugin directory) if the daemon changed:
+
+```sh
 ~/.config/omarchy/plugins/anton.scrollmode/install.sh
 ```
 
-The first command installs the bar widget from git; the second installs the
-root daemon, the CLI and the systemd unit, and asks for `sudo` once. Running
-the installer from the plugin directory is safe: it detects that the plugin is
-already in place and only installs the system parts.
-
 ### From a checkout
+
+The installer is also the manual path, and it installs both halves at once.
 
 ```sh
 git clone https://gitlab.com/<you>/omarchy-scrollmode.git ~/Projects/omarchy-scrollmode

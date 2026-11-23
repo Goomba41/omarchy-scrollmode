@@ -25,6 +25,9 @@ All notable changes to this project are documented here. The format follows
   toggles show `· ✓ Done` after their title, auto-exit chips replace their label
   with `✓ Done`, and "Reset to defaults" turns yellow while it waits for the
   second click.
+- One-click setup: when the daemon is missing, the panel offers **Install…** and
+  opens a terminal running the bundled installer, so installing the plugin is
+  enough and no commands have to be copied.
 - CLI: `devices`, `use <id>`, `rescan`.
 - Runtime `status.json` with the device list, active id and hidden count.
 - Russian localization.
