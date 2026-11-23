@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "anton.scrollmode",
+  "name": "Trackball Scroll Mode",
+  "version": "1.2.0",
+  "author": "anton",
+  "license": "MIT",
+  "description": "Switch the trackball between pointer and scrolling",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "ScrollMode.qml"
+  },
+  "barWidget": {
+    "displayName": "Trackball Scroll",
+    "description": "Trackball pointer/scroll mode indicator and toggle",
+    "category": "System",
+    "defaultSection": "centerEnd",
+    "allowMultiple": false
+  }
+}

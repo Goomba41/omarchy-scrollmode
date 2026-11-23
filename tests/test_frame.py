@@ -1,0 +1,175 @@
+#!/usr/bin/env python3
+"""Offline checks for the frame -> uinput path. Run with:
+
+    python3 tests/test_frame.py
+
+Needs python-evdev but no root: the uinput device is faked.
+"""
+
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "daemon"))
+
+import evdev  # noqa: E402
+from evdev import ecodes  # noqa: E402
+
+import scrollmoded  # noqa: E402
+
+CONFIG = os.path.join(os.path.dirname(__file__), "..", "config.default.json")
+
+
+class FakeUI:
+    def __init__(self):
+        self.events = []
+        self.synced = 0
+        self.closed = False
+
+    def write(self, event_type, code, value):
+        self.events.append((event_type, code, value))
+
+    def syn(self):
+        self.synced += 1
+
+    def close(self):
+        self.closed = True
+
+
+def event(event_type, code, value):
+    return evdev.InputEvent(0, 0, event_type, code, value)
+
+
+class FakeDev:
+    fd = 0
+
+    def grab(self):
+        pass
+
+    def ungrab(self):
+        pass
+
+    def capabilities(self, absinfo=False):
+        return {}
+
+    def close(self):
+        pass
+
+
+def fresh(mode="scroll"):
+    daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
+    daemon.cfg["exit_on_click"] = False
+    daemon.mode = mode
+    daemon.converter.speed = 1.0
+    daemon.dev = FakeDev()
+    daemon.ui = FakeUI()
+    daemon.grabbed = True  # so activate() only switches the mode
+    daemon.write_state = lambda: None
+    return daemon
+
+
+def main():
+    # One notch of ball movement plus a left click in the same frame.
+    daemon = fresh()
+    daemon.handle_frame(
+        [
+            event(ecodes.EV_REL, ecodes.REL_Y, 85),
+            event(ecodes.EV_KEY, ecodes.BTN_LEFT, 1),
+        ]
+    )
+    ui = daemon.ui
+    assert (ecodes.EV_KEY, ecodes.BTN_LEFT, 1) in ui.events, ui.events
+    hi = [v for (t, c, v) in ui.events if c == scrollmoded.REL_WHEEL_HI_RES]
+    clicks = [v for (t, c, v) in ui.events if c == ecodes.REL_WHEEL]
+    print("emitted:", ui.events)
+    assert hi == [-120], hi
+    assert clicks == [-1], clicks
+    assert ui.synced == 1, ui.synced
+    assert not [1 for (t, c, _v) in ui.events if c in (ecodes.REL_X, ecodes.REL_Y)]
+
+    # Sniper mode runs the same converter at the configured multiplier.
+    daemon = fresh("sniper")
+    daemon.cfg["scroll"]["sniper_multiplier"] = 0.5
+    daemon.converter.speed = 0.5
+    daemon.handle_frame([event(ecodes.EV_REL, ecodes.REL_Y, 85)])
+    hi = [v for (t, c, v) in daemon.ui.events if c == scrollmoded.REL_WHEEL_HI_RES]
+    print("sniper:", daemon.ui.events)
+    assert hi == [-60], hi
+
+    # Any mouse button leaves scroll mode when exit_on_click is on, and the
+    # click is still forwarded before the grab is dropped.
+    for code in (ecodes.BTN_LEFT, ecodes.BTN_RIGHT, ecodes.BTN_MIDDLE, ecodes.BTN_SIDE):
+        daemon = fresh()
+        daemon.cfg["exit_on_click"] = True
+        ui = daemon.ui
+        daemon.handle_frame([event(ecodes.EV_KEY, code, 1)])
+        assert daemon.mode == "pointer", (code, daemon.mode)
+        assert (ecodes.EV_KEY, code, 1) in ui.events, ui.events
+    print("exit on any button: ok")
+
+    # Releasing a button does not exit.
+    daemon = fresh()
+    daemon.cfg["exit_on_click"] = True
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)])
+    assert daemon.mode == "scroll", daemon.mode
+
+    # Pointer mode forwards nothing and never writes to a missing uinput.
+    daemon = fresh("pointer")
+    daemon.ui = None
+    daemon.handle_frame([event(ecodes.EV_REL, ecodes.REL_Y, 100)])
+
+    # A quick tap toggles and keeps the mode.
+    daemon = fresh("pointer")
+    daemon.hold_press("toggle")
+    assert daemon.mode == "pointer"
+    daemon.hold_release("toggle")
+    assert daemon.mode == "scroll", daemon.mode
+
+    # Holding past the threshold engages the mode, release restores it.
+    daemon = fresh("pointer")
+    daemon.hold_press("toggle")
+    daemon.press["at"] -= 1.0
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "scroll", daemon.mode
+    daemon.hold_release("toggle")
+    assert daemon.mode == "pointer", daemon.mode
+
+    # Sniper: tap toggles, hold is momentary, pointer is a no-op.
+    daemon = fresh("scroll")
+    daemon.hold_press("sniper")
+    daemon.hold_release("sniper")
+    assert daemon.mode == "sniper", daemon.mode
+
+    daemon = fresh("scroll")
+    daemon.hold_press("sniper")
+    daemon.press["at"] -= 1.0
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "sniper", daemon.mode
+    daemon.hold_release("sniper")
+    assert daemon.mode == "scroll", daemon.mode
+
+    daemon = fresh("pointer")
+    daemon.hold_press("sniper")
+    daemon.hold_release("sniper")
+    assert daemon.mode == "pointer", daemon.mode
+
+    # A click that leaves scroll mode cancels a pending hold.
+    daemon = fresh("scroll")
+    daemon.cfg["exit_on_click"] = True
+    daemon.hold_press("toggle")
+    daemon.press["at"] -= 1.0
+    daemon.tick(time.monotonic())
+    assert daemon.mode == "scroll", daemon.mode
+    daemon.handle_frame([event(ecodes.EV_KEY, ecodes.BTN_RIGHT, 1)])
+    assert daemon.mode == "pointer", daemon.mode
+    daemon.hold_release("toggle")
+    assert daemon.mode == "pointer", daemon.mode
+
+    print("tap/hold: ok")
+
+    print("frame path: ok")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

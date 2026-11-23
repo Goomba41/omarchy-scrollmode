@@ -1,0 +1,17 @@
+stages:
+  - test
+
+test:
+  stage: test
+  image: archlinux:latest
+  before_script:
+    - pacman -Syu --noconfirm python python-evdev jq
+  script:
+    - python3 daemon/scrollmoded.py --selftest
+    - python3 tests/test_frame.py
+    - bash -n install.sh
+    - bash -n uninstall.sh
+    - jq -e '.schemaVersion == 1' manifest.json
+    - jq -e '(.kinds | type) == "array" and (.kinds | length) > 0' manifest.json
+    - jq -e '(.entryPoints | type) == "object"' manifest.json
+    - for ep in $(jq -r '.entryPoints[]' manifest.json); do test -f "$ep"; done

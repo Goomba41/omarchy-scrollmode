@@ -1,0 +1,426 @@
+#!/usr/bin/env python3
+"""omarchy-scrollmode - control the trackball scroll-mode daemon.
+
+Usage:
+  omarchy-scrollmode toggle      pointer <-> scroll
+  omarchy-scrollmode sniper      scroll <-> sniper (no-op in pointer)
+  omarchy-scrollmode on|off      force scroll or pointer mode
+  omarchy-scrollmode status      print the current mode
+  omarchy-scrollmode reload      reload ~/.config/omarchy/scrollmode.json
+  omarchy-scrollmode devices     list pointing devices
+  omarchy-scrollmode use <id>    make a device the active one
+  omarchy-scrollmode rescan      re-read the connected devices
+  omarchy-scrollmode set <path> <value>   change one setting
+  omarchy-scrollmode reset       restore the defaults
+  omarchy-scrollmode hotkey      apply the configured hotkeys to Hyprland
+  omarchy-scrollmode config      print the config path
+
+Bindings use press/release: a tap toggles and keeps the mode, holding longer
+than hold_threshold_ms engages the mode only while the keys are held.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+
+APP = "omarchy-scrollmode"
+RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode")
+SOCKET_PATH = os.path.join(RUNTIME_DIR, "control.sock")
+STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
+
+HOME = os.path.expanduser("~")
+CONFIG_PATH = os.path.join(HOME, ".config", "omarchy", "scrollmode.json")
+BINDINGS_PATH = os.path.join(HOME, ".config", "hypr", "bindings.lua")
+
+DEFAULT_HOTKEY = "ALT + Z"
+DEFAULT_SNIPER_HOTKEY = "ALT + S"
+
+# Keep in sync with config.default.json and scrollmoded.DEFAULTS.
+DEFAULT_CONFIG = {
+    "device": {"match": "logitech", "path": "", "selected": "", "exclude": ["omarchy-scrollmode"]},
+    "hotkey": "ALT + Z",
+    "sniper_hotkey": "ALT + S",
+    "hold_threshold_ms": 300,
+    "scroll": {
+        "counts_per_notch": 85,
+        "sensitivity": 1.0,
+        "sniper_multiplier": 0.20,
+        "invert_vertical": False,
+        "invert_horizontal": False,
+        "axis_lock": True,
+        "axis_window_seconds": 0.25,
+        "hi_res": True,
+    },
+    "exit_on_click": True,
+    "auto_exit_seconds": 0,
+    "hold_max_seconds": 60,
+}
+
+# path -> (kind, min, max)
+SETTINGS = {
+    "scroll.counts_per_notch": ("number", 20, 400),
+    "scroll.sensitivity": ("number", 0.1, 10.0),
+    "scroll.sniper_multiplier": ("number", 0.05, 1.0),
+    "scroll.invert_vertical": ("bool",),
+    "scroll.invert_horizontal": ("bool",),
+    "scroll.axis_lock": ("bool",),
+    "scroll.axis_window_seconds": ("number", 0.05, 2.0),
+    "scroll.hi_res": ("bool",),
+    "exit_on_click": ("bool",),
+    "auto_exit_seconds": ("number", 0, 3600),
+    "hold_threshold_ms": ("number", 100, 1000),
+    "hold_max_seconds": ("number", 0, 3600),
+    "hotkey": ("string",),
+    "sniper_hotkey": ("string",),
+    "device.selected": ("string",),
+}
+
+BLOCK_START = "-- >>> omarchy-scrollmode >>>"
+BLOCK_END = "-- <<< omarchy-scrollmode <<<"
+
+# Caps Lock is remapped to Compose by compose:caps, so a Caps_Lock keysym bind
+# never matches. Binding the keycode (66 on evdev layouts) works regardless.
+# Single letters and digits are translated to their US physical keycode too: on
+# a remapped layout (Workman, Dvorak, ...) a keysym bind lands on whatever
+# physical key produces that letter, which is not the key on the keycaps.
+KEY_ALIASES = {
+    "caps": "code:66",
+    "capslock": "code:66",
+    "caps_lock": "code:66",
+}
+
+KEYCODES = {
+    "Q": 24, "W": 25, "E": 26, "R": 27, "T": 28, "Y": 29, "U": 30, "I": 31,
+    "O": 32, "P": 33,
+    "A": 38, "S": 39, "D": 40, "F": 41, "G": 42, "H": 43, "J": 44, "K": 45,
+    "L": 46,
+    "Z": 52, "X": 53, "C": 54, "V": 55, "B": 56, "N": 57, "M": 58,
+    "1": 10, "2": 11, "3": 12, "4": 13, "5": 14,
+    "6": 15, "7": 16, "8": 17, "9": 18, "0": 19,
+}
+
+
+def normalize_hotkey(hotkey: str) -> str:
+    parts = [part.strip() for part in hotkey.split("+") if part.strip()]
+    if parts:
+        key = parts[-1]
+        alias = KEY_ALIASES.get(key.lower())
+        if alias:
+            parts[-1] = alias
+        elif len(key) == 1 and key.upper() in KEYCODES:
+            parts[-1] = f"code:{KEYCODES[key.upper()]}"
+    return " + ".join(parts)
+
+
+def send(command: str) -> str:
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.settimeout(2.0)
+            client.connect(SOCKET_PATH)
+            client.sendall((command + "\n").encode())
+            data = b""
+            while not data.endswith(b"\n"):
+                chunk = client.recv(256)
+                if not chunk:
+                    break
+                data += chunk
+        return data.decode("utf-8", "replace").strip()
+    except FileNotFoundError:
+        raise SystemExit(f"{APP}: daemon is not running (no {SOCKET_PATH})")
+    except ConnectionRefusedError:
+        raise SystemExit(f"{APP}: daemon is not accepting connections ({SOCKET_PATH})")
+    except socket.timeout:
+        raise SystemExit(f"{APP}: daemon did not answer in time")
+
+
+def read_config() -> dict:
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        return data if isinstance(data, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"{APP}: cannot read {CONFIG_PATH}: {exc}")
+
+
+def lua_string(value: str) -> str:
+    return json.dumps(value)
+
+
+def hotkey_block(hotkey: str, sniper_hotkey: str = "") -> str:
+    cli = shutil.which(APP) or f"/usr/local/bin/{APP}"
+
+    def hold_bind(keys: str, press_text: str, action: str, release_text: str) -> str:
+        return (
+            f"o.bind_hold({lua_string(keys)},\n"
+            f"  {lua_string(press_text)},\n"
+            f"  {lua_string(f'{cli} press {action}')},\n"
+            f"  {lua_string(release_text)},\n"
+            f"  {lua_string(f'{cli} release {action}')})"
+        )
+
+    binds = [
+        hold_bind(
+            normalize_hotkey(hotkey),
+            "Trackball: hold to scroll, tap to toggle",
+            "toggle",
+            "Release the trackball scroll hold",
+        )
+    ]
+
+    sniper = normalize_hotkey(sniper_hotkey) if sniper_hotkey else ""
+    if sniper:
+        # A bare key is only safe for Caps, and never as a plain letter that
+        # would fire on every keystroke.
+        if "+" not in sniper and sniper not in ("code:66", "code:58"):
+            sniper = ""
+        else:
+            binds.append(
+                hold_bind(
+                    sniper,
+                    "Trackball: hold for sniper, tap to toggle",
+                    "sniper",
+                    "Release the trackball sniper hold",
+                )
+            )
+
+    body = "\n".join(binds)
+    return (
+        f"{BLOCK_START}\n"
+        f"-- Generated from {CONFIG_PATH} by `{APP} hotkey`.\n"
+        f"{body}\n"
+        f"{BLOCK_END}\n"
+    )
+    return (
+        f"{BLOCK_START}\n"
+        f"-- Generated from {CONFIG_PATH} by `{APP} hotkey`.\n"
+        f"{body}\n"
+        f"{BLOCK_END}\n"
+    )
+
+
+def reload_hyprland() -> int:
+    if not (shutil.which("hyprctl") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")):
+        return 0
+    subprocess.run(["hyprctl", "reload"], check=False, capture_output=True)
+    errors = subprocess.run(
+        ["hyprctl", "configerrors"], check=False, capture_output=True, text=True
+    )
+    text = (errors.stdout or "").strip()
+    if text and text.lower() != "no errors":
+        print(f"{APP}: hyprctl configerrors:\n{text}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def read_bindings() -> str:
+    if not os.path.exists(BINDINGS_PATH):
+        return ""
+    with open(BINDINGS_PATH, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
+def write_bindings(content: str) -> None:
+    os.makedirs(os.path.dirname(BINDINGS_PATH), exist_ok=True)
+    if os.path.exists(BINDINGS_PATH) and not os.path.exists(
+        BINDINGS_PATH + ".before-scrollmode"
+    ):
+        shutil.copy2(BINDINGS_PATH, BINDINGS_PATH + ".before-scrollmode")
+    with open(BINDINGS_PATH, "w", encoding="utf-8") as handle:
+        handle.write(content)
+
+
+BLOCK_PATTERN = re.compile(
+    r"^" + re.escape(BLOCK_START) + r".*?^" + re.escape(BLOCK_END) + r"\n?",
+    re.S | re.M,
+)
+
+
+def remove_hotkey() -> int:
+    current = read_bindings()
+    updated, count = BLOCK_PATTERN.subn("", current, count=1)
+    if count:
+        write_bindings(updated)
+        print(f"{APP}: hotkey removed from {BINDINGS_PATH}")
+    else:
+        print(f"{APP}: no managed hotkey in {BINDINGS_PATH}")
+    return reload_hyprland()
+
+
+def apply_hotkey() -> int:
+    config = read_config()
+    hotkey = str(config.get("hotkey") or DEFAULT_HOTKEY).strip()
+    normalized = normalize_hotkey(hotkey)
+    sniper_hotkey = str(config.get("sniper_hotkey") or DEFAULT_SNIPER_HOTKEY).strip()
+
+    block = hotkey_block(hotkey, sniper_hotkey)
+
+    if os.path.exists(BINDINGS_PATH):
+        with open(BINDINGS_PATH, "r", encoding="utf-8") as handle:
+            current = handle.read()
+    else:
+        current = ""
+
+    if BLOCK_PATTERN.search(current):
+        updated = BLOCK_PATTERN.sub(block, current, count=1)
+    else:
+        if current and not current.endswith("\n"):
+            current += "\n"
+        updated = current + ("\n" if current.strip() else "") + block
+
+    note = f" [{normalized}]" if normalized != hotkey else ""
+    if updated != current or not os.path.exists(BINDINGS_PATH):
+        write_bindings(updated)
+        print(f"{APP}: hotkeys {hotkey!r}{note} written to {BINDINGS_PATH}")
+    else:
+        print(f"{APP}: hotkeys {hotkey!r}{note} already applied")
+    return reload_hyprland()
+
+
+def coerce(path: str, raw: str):
+    spec = SETTINGS.get(path)
+    if spec is None:
+        raise SystemExit(f"{APP}: unknown setting {path!r}")
+    kind = spec[0]
+    if kind == "bool":
+        value = raw.strip().lower()
+        if value in ("1", "true", "yes", "on"):
+            return True
+        if value in ("0", "false", "no", "off"):
+            return False
+        raise SystemExit(f"{APP}: {path} expects true or false, got {raw!r}")
+    if kind == "number":
+        try:
+            number = float(raw)
+        except ValueError:
+            raise SystemExit(f"{APP}: {path} expects a number, got {raw!r}")
+        low, high = spec[1], spec[2]
+        if not low <= number <= high:
+            raise SystemExit(f"{APP}: {path} must be between {low:g} and {high:g}")
+        return int(number) if number == int(number) else round(number, 4)
+    return raw
+
+
+def write_config(config: dict) -> None:
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(config, handle, indent=2)
+        handle.write("\n")
+    os.replace(tmp, CONFIG_PATH)
+
+
+def reload_daemon() -> None:
+    try:
+        send("reload")
+    except SystemExit:
+        pass
+
+
+def set_config_value(path: str, raw: str) -> int:
+    value = coerce(path, raw)
+    config = read_config()
+    node = config
+    parts = path.split(".")
+    for part in parts[:-1]:
+        if not isinstance(node.get(part), dict):
+            node[part] = {}
+        node = node[part]
+    node[parts[-1]] = value
+    write_config(config)
+    reload_daemon()
+    print(f"{path} = {value}")
+    return 0
+
+
+def reset_config() -> int:
+    write_config(json.loads(json.dumps(DEFAULT_CONFIG)))
+    reload_daemon()
+    print("defaults restored")
+    return apply_hotkey()
+
+
+def list_devices() -> int:
+    try:
+        with open(STATUS_PATH, "r", encoding="utf-8") as handle:
+            status = json.load(handle)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"{APP}: cannot read {STATUS_PATH}: {exc}")
+
+    devices = status.get("devices") or []
+    if not devices:
+        print("no pointing devices")
+        return 0
+    active = str(status.get("activeId") or "")
+    for device in devices:
+        mark = "*" if str(device.get("id")) == active else " "
+        print(f"{mark} {device.get('name')}  [{device.get('id')}]")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.strip())
+        return 0
+
+    command = argv[0].lower()
+
+    if command == "config":
+        print(CONFIG_PATH)
+        return 0
+
+    if command == "hotkey":
+        if len(argv) > 1 and argv[1].lower() == "remove":
+            return remove_hotkey()
+        return apply_hotkey()
+
+    if command == "set":
+        if len(argv) < 3:
+            print(f"{APP}: usage: {APP} set <path> <value>", file=sys.stderr)
+            print(f"{APP}: known paths: {', '.join(sorted(SETTINGS))}", file=sys.stderr)
+            return 2
+        return set_config_value(argv[1], argv[2])
+
+    if command == "reset":
+        return reset_config()
+
+    if command == "devices":
+        return list_devices()
+
+    if command == "use":
+        if len(argv) < 2 or not argv[1].strip():
+            print(f"{APP}: usage: {APP} use <device-id>  (see `{APP} devices`)", file=sys.stderr)
+            return 2
+        set_config_value("device.selected", argv[1].strip())
+        send("rescan")
+        return 0
+
+    if command == "rescan":
+        print(send("rescan"))
+        return 0
+
+    if command in ("toggle", "sniper", "on", "off", "status", "reload"):
+        print(send(command))
+        return 0
+
+    if command in ("press", "release"):
+        action = argv[1].lower() if len(argv) > 1 else "toggle"
+        if action not in ("toggle", "sniper"):
+            action = "toggle"
+        print(send(f"{command} {action}"))
+        return 0
+
+    print(f"{APP}: unknown command {command!r}", file=sys.stderr)
+    print(__doc__.strip(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

@@ -1,0 +1,1312 @@
+#!/usr/bin/env python3
+"""scrollmoded - trackball scroll-mode daemon for Omarchy.
+
+The daemon keeps a pointing device in its normal pointer mode and, on request,
+grabs it exclusively (EVIOCGRAB) and replays its events through a uinput
+device. While grabbed, ball movement is converted into high-resolution scroll
+wheel events instead of pointer motion.
+
+Only the grabbed interval is affected: in pointer mode the device is not
+grabbed at all, so the compositor sees it exactly as before.
+
+Control is a line based unix socket in the runtime directory; the current mode
+is mirrored into a small file the bar widget watches.
+"""
+
+from __future__ import annotations
+
+import argparse
+import errno
+import fcntl
+import glob
+import json
+import math
+import os
+import pwd
+import re
+import select
+import selectors
+import signal
+import socket
+import struct
+import sys
+import threading
+import time
+import traceback
+
+try:
+    import evdev
+    from evdev import ecodes
+except ImportError:  # pragma: no cover - reported before anything else runs
+    sys.stderr.write(
+        "scrollmoded: python-evdev is missing (install it with: omarchy pkg add python-evdev)\n"
+    )
+    raise SystemExit(1)
+
+APP = "omarchy-scrollmode"
+RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode")
+STATE_PATH = os.path.join(RUNTIME_DIR, "state")
+DEVICE_PATH = os.path.join(RUNTIME_DIR, "device")
+STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
+SOCKET_PATH = os.path.join(RUNTIME_DIR, "control.sock")
+LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
+
+HIDPP_SW_ID = 0x0A
+HIDPP_NAME_FEATURE = 0x0005
+HIDPP_NAME_KEYS = ("m575", "ergo", "mx ", "trackball", "mouse")
+KEYBOARD_HINTS = ("keyboard", "keypad", "kbd")
+# Models that are trackballs even when the advertised name omits the word.
+TRACKBALL_KEYS = (
+    "trackball",
+    "m570",
+    "m575",
+    "mx ergo",
+    "marble",
+    "orbit",
+    "slimblade",
+    "expert mouse",
+    "deft",
+    "huge",
+    "gameball",
+    "ploopy",
+)
+
+VIRTUAL_NAME = "omarchy-scrollmode virtual pointer"
+VIRTUAL_PREFIX = "omarchy-scrollmode"
+
+HI_RES_PER_NOTCH = 120
+
+REL_WHEEL_HI_RES = getattr(ecodes, "REL_WHEEL_HI_RES", 0x0B)
+REL_HWHEEL_HI_RES = getattr(ecodes, "REL_HWHEEL_HI_RES", 0x0C)
+
+DEFAULTS = {
+    "device": {
+        "match": "logitech",
+        "path": "",
+        "selected": "",
+        "exclude": ["omarchy-scrollmode"],
+    },
+    "hotkey": "ALT + Z",
+    "sniper_hotkey": "ALT + S",
+    "hold_threshold_ms": 300,
+    "scroll": {
+        "counts_per_notch": 85.0,
+        "sensitivity": 1.0,
+        "sniper_multiplier": 0.20,
+        "invert_vertical": False,
+        "invert_horizontal": False,
+        "axis_lock": True,
+        "axis_window_seconds": 0.25,
+        "hi_res": True,
+    },
+    "exit_on_click": True,
+    "auto_exit_seconds": 0,
+    "hold_max_seconds": 60,
+}
+
+
+def log(message: str) -> None:
+    sys.stderr.write(f"{APP}: {message}\n")
+    sys.stderr.flush()
+
+
+def deep_merge(base: dict, override: dict) -> dict:
+    merged = dict(base)
+    for key, value in (override or {}).items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def load_config(path: str) -> dict:
+    with open(path, "r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError("top level must be a JSON object")
+    return deep_merge(DEFAULTS, data)
+
+
+def load_config_or_defaults(path: str) -> dict:
+    """A missing config is not fatal: the daemon runs on the built-in defaults."""
+    try:
+        return load_config(path)
+    except FileNotFoundError:
+        log(f"config not found ({path}), using defaults")
+        return deep_merge(DEFAULTS, {})
+
+
+def event_paths() -> list[str]:
+    def number(path: str) -> int:
+        match = re.search(r"event(\d+)$", path)
+        return int(match.group(1)) if match else 0
+
+    return sorted(glob.glob("/dev/input/event*"), key=number)
+
+
+def read_udev_props(path: str) -> dict:
+    """Properties udev already worked out for this event node."""
+    try:
+        info = os.stat(path)
+    except OSError:
+        return {}
+    database = f"/run/udev/data/c{os.major(info.st_rdev)}:{os.minor(info.st_rdev)}"
+    props = {}
+    try:
+        with open(database, "r", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if line.startswith("E:") and "=" in line:
+                    key, _, value = line[2:].rstrip("\n").partition("=")
+                    props[key] = value
+    except OSError:
+        pass
+    return props
+
+
+def clean_udev(value: str) -> str:
+    return (value or "").replace("_", " ").strip()
+
+
+def pretty_device_name(props: dict, fallback: str) -> str:
+    vendor = props.get("ID_VENDOR_FROM_DATABASE") or clean_udev(props.get("ID_VENDOR", ""))
+    model = props.get("ID_MODEL_FROM_DATABASE") or clean_udev(props.get("ID_MODEL", ""))
+    if vendor and model:
+        return model if vendor.lower() == model.lower() else f"{vendor} {model}"
+    return model or vendor or fallback
+
+
+def looks_like_keyboard(raw_name: str, props: dict) -> bool:
+    haystack = " ".join(
+        [
+            raw_name,
+            props.get("ID_VENDOR", ""),
+            props.get("ID_MODEL", ""),
+            props.get("ID_VENDOR_FROM_DATABASE", ""),
+            props.get("ID_MODEL_FROM_DATABASE", ""),
+        ]
+    ).lower()
+    return any(hint in haystack for hint in KEYBOARD_HINTS)
+
+
+def device_identity(device: evdev.InputDevice) -> str:
+    parts = [f"{device.info.vendor:04x}:{device.info.product:04x}", device.name or ""]
+    uniq = (getattr(device, "uniq", "") or "").strip()
+    if uniq:
+        parts.append(uniq)
+    return "|".join(parts)
+
+
+def scan_pointers(excluded: list[str]) -> tuple[list[dict], int]:
+    """Every pointing device on the system, as stable ids + display names."""
+    seen = set()
+    found = []
+    hidden = 0
+    for path in event_paths():
+        try:
+            device = evdev.InputDevice(path)
+        except OSError:
+            continue
+        try:
+            name = device.name or ""
+            lower = name.lower()
+            if VIRTUAL_PREFIX in lower:
+                continue
+            if any(item and item in lower for item in excluded):
+                continue
+            caps = device.capabilities(absinfo=False)
+            rel = set(caps.get(ecodes.EV_REL, []))
+            keys = set(caps.get(ecodes.EV_KEY, []))
+            if not (ecodes.REL_X in rel and ecodes.REL_Y in rel and ecodes.BTN_LEFT in keys):
+                continue
+
+            props = read_udev_props(path)
+            if looks_like_keyboard(name, props):
+                hidden += 1
+                continue
+
+            identity = device_identity(device)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            found.append(
+                {
+                    "id": identity,
+                    "name": pretty_device_name(props, name),
+                    "raw": name,
+                    "path": path,
+                }
+            )
+        finally:
+            device.close()
+    return found, hidden
+
+
+def choose_device(cfg: dict, devices: list[dict]) -> dict | None:
+    selected = str(cfg["device"].get("selected") or "")
+    if selected:
+        for device in devices:
+            if device["id"] == selected:
+                return device
+        return None
+
+    pinned = str(cfg["device"].get("path") or "")
+    if pinned:
+        for device in devices:
+            if device["path"] == pinned:
+                return device
+        return None
+
+    wanted = str(cfg["device"].get("match") or "").lower()
+    if wanted:
+        for device in devices:
+            if wanted in device["name"].lower():
+                return device
+    for device in devices:
+        if looks_like_trackball(device["name"]):
+            return device
+    return devices[0] if devices else None
+
+
+def open_pointer(path: str) -> evdev.InputDevice | None:
+    try:
+        return evdev.InputDevice(path)
+    except OSError as exc:
+        log(f"cannot open {path}: {exc}")
+        return None
+
+
+def _hidpp_request(fd, index: int, feature: int, function: int, params: bytes = b"", timeout: float = 0.6):
+    report = bytearray(20)
+    report[0] = 0x11
+    report[1] = index
+    report[2] = feature
+    report[3] = (function << 4) | HIDPP_SW_ID
+    report[4:4 + len(params)] = params
+    try:
+        os.write(fd, bytes(report))
+    except OSError:
+        return None
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        readable, _, _ = select.select([fd], [], [], max(0.02, deadline - time.monotonic()))
+        if not readable:
+            return None
+        try:
+            data = os.read(fd, 64)
+        except OSError:
+            return None
+        if len(data) < 7 or data[0] not in (0x10, 0x11):
+            continue
+        if data[1] != index or data[2] != feature or (data[3] >> 4) != function:
+            continue
+        return data
+    return None
+
+
+def _hidpp_name(fd, index: int) -> str | None:
+    found = None
+    for _attempt in range(2):
+        found = _hidpp_request(fd, index, 0x00, 0, struct.pack(">H", HIDPP_NAME_FEATURE))
+        if found and found[2] == 0x00:
+            break
+        time.sleep(0.05)
+    if not found or found[2] != 0x00:
+        return None
+
+    feature = found[4]
+    if feature in (0x00, 0xFF) or feature >= 0x20:
+        return None
+
+    count = _hidpp_request(fd, index, feature, 0)
+    if not count:
+        return None
+    length = count[4]
+    if not 0 < length <= 128:
+        return None
+
+    raw = b""
+    offset = 0
+    while offset < length:
+        part = _hidpp_request(fd, index, feature, 1, bytes([offset]))
+        if not part:
+            break
+        chunk = bytes(part[4:])
+        if not chunk:
+            break
+        raw += chunk[: length - offset]
+        offset += len(chunk)
+
+    if len(raw) < length:
+        return None
+    return raw[:length].decode("utf-8", "replace").strip("\x00 ")
+
+
+def _hidpp_probe_once() -> str:
+    for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        try:
+            with open(os.path.join(link, "device", "uevent"), "r", encoding="utf-8") as handle:
+                uevent = handle.read()
+            with open(os.path.join(link, "device", "report_descriptor"), "rb") as handle:
+                descriptor = handle.read()
+        except OSError:
+            continue
+        if "046D" not in uevent.upper() or b"\x06\x00\xff" not in descriptor:
+            continue
+
+        node = "/dev/" + os.path.basename(link)
+        try:
+            fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            while select.select([fd], [], [], 0)[0]:
+                os.read(fd, 64)
+            time.sleep(0.05)
+            first = ""
+            for index in range(1, 7):
+                name = _hidpp_name(fd, index)
+                if not name:
+                    continue
+                if any(key in name.lower() for key in HIDPP_NAME_KEYS):
+                    return name
+                first = first or name
+            if first:
+                return first
+        finally:
+            os.close(fd)
+    return ""
+
+
+def hidpp_device_name() -> str:
+    """Ask the Logitech receiver for the paired device name over HID++ 2.0."""
+    for attempt in range(3):
+        name = _hidpp_probe_once()
+        if name:
+            return name
+        time.sleep(0.15)
+    return ""
+
+
+def looks_like_trackball(name: str) -> bool:
+    lower = (name or "").lower()
+    return any(key in lower for key in TRACKBALL_KEYS)
+
+
+def friendly_device_name(raw: str) -> str:
+    name = (raw or "").strip()
+    if not name:
+        return ""
+    if not name.lower().startswith("logitech"):
+        name = "Logitech " + name
+    if name.lower().endswith(" trackball"):
+        name = name[: -len(" trackball")].strip()
+    return name
+
+
+class ScrollConverter:
+    """Turns relative pointer counts into wheel events."""
+
+    def __init__(self) -> None:
+        self.counts_per_notch = 85.0
+        self.sensitivity = 1.0
+        self.speed = 1.0
+        self.invert_v = False
+        self.invert_h = False
+        self.axis_lock = True
+        self.axis_window = 0.25
+        self.hi_res = True
+        self.reset()
+
+    def configure(self, cfg: dict) -> None:
+        scroll = cfg["scroll"]
+        self.counts_per_notch = max(1.0, float(scroll.get("counts_per_notch") or 85.0))
+        self.sensitivity = max(0.0, float(scroll.get("sensitivity", 1.0)))
+        self.invert_v = bool(scroll.get("invert_vertical"))
+        self.invert_h = bool(scroll.get("invert_horizontal"))
+        self.axis_lock = bool(scroll.get("axis_lock", True))
+        self.axis_window = max(0.0, float(scroll.get("axis_window_seconds", 0.25)))
+        self.hi_res = bool(scroll.get("hi_res", True))
+
+    def reset(self) -> None:
+        self.acc_v = 0.0
+        self.acc_h = 0.0
+        self.hr_v = 0
+        self.hr_h = 0
+        self.axis: str | None = None
+        self.last_motion = 0.0
+
+    def _pick_axis(self, dx: int, dy: int, now: float) -> str | None:
+        if not self.axis_lock:
+            return None
+        if self.axis and now - self.last_motion > self.axis_window:
+            self.axis = None
+
+        # A clean change of direction switches the axis immediately, so a
+        # vertical gesture followed by a horizontal one is not swallowed.
+        if self.axis == "y" and dx and not dy:
+            self.axis = "x"
+        elif self.axis == "x" and dy and not dx:
+            self.axis = "y"
+
+        # Only lock an axis when it clearly dominates; a diagonal gesture keeps
+        # both components and scrolls diagonally.
+        if self.axis is None and abs(dx) + abs(dy) >= 3:
+            if abs(dx) >= abs(dy) * 1.4:
+                self.axis = "x"
+            elif abs(dy) >= abs(dx) * 1.4:
+                self.axis = "y"
+        return self.axis
+
+    def _axis_events(self, counts: float, vertical: bool) -> list[tuple[int, int, int]]:
+        if counts == 0 or self.sensitivity == 0:
+            return []
+
+        # Work in high-resolution wheel units (120 per notch) so the discrete
+        # wheel clicks stay exact integer arithmetic.
+        units = (
+            counts
+            / self.counts_per_notch
+            * self.sensitivity
+            * self.speed
+            * HI_RES_PER_NOTCH
+        )
+        out: list[tuple[int, int, int]] = []
+
+        if vertical:
+            self.acc_v += units
+            whole = int(self.acc_v + math.copysign(1e-6, self.acc_v))
+            self.acc_v -= whole
+            if whole:
+                if self.hi_res:
+                    out.append((ecodes.EV_REL, REL_WHEEL_HI_RES, whole))
+                self.hr_v += whole
+            clicks = int(self.hr_v / HI_RES_PER_NOTCH)
+            if clicks:
+                out.append((ecodes.EV_REL, ecodes.REL_WHEEL, clicks))
+                self.hr_v -= clicks * HI_RES_PER_NOTCH
+        else:
+            self.acc_h += units
+            whole = int(self.acc_h + math.copysign(1e-6, self.acc_h))
+            self.acc_h -= whole
+            if whole:
+                if self.hi_res:
+                    out.append((ecodes.EV_REL, REL_HWHEEL_HI_RES, whole))
+                self.hr_h += whole
+            clicks = int(self.hr_h / HI_RES_PER_NOTCH)
+            if clicks:
+                out.append((ecodes.EV_REL, ecodes.REL_HWHEEL, clicks))
+                self.hr_h -= clicks * HI_RES_PER_NOTCH
+        return out
+
+    def events(self, dx: int, dy: int, now: float) -> list[tuple[int, int, int]]:
+        if dx == 0 and dy == 0:
+            return []
+
+        axis = self._pick_axis(dx, dy, now)
+        if axis == "x":
+            dy = 0
+        elif axis == "y":
+            dx = 0
+        if dx == 0 and dy == 0:
+            return []
+
+        self.last_motion = now
+        vertical = -dy if not self.invert_v else dy
+        horizontal = dx if not self.invert_h else -dx
+        return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
+
+
+class DeviceLost(Exception):
+    pass
+
+
+class Daemon:
+    def __init__(self, config_path: str, uid: int, gid: int) -> None:
+        self.config_path = config_path
+        self.uid = uid
+        self.gid = gid
+        self.cfg = load_config_or_defaults(config_path)
+        self.converter = ScrollConverter()
+        self.converter.configure(self.cfg)
+
+        self.mode = "pointer"
+        self.dev: evdev.InputDevice | None = None
+        self.ui: evdev.UInput | None = None
+        self.grabbed = False
+        self.frame: list = []
+        self.running = True
+        self.reload_pending = False
+        self.toggle_pending = False
+        self.last_activity = time.monotonic()
+        self.activated_at = 0.0
+        self.last_click_exit = 0.0
+        self.press = None
+        self.device_name = ""
+        self.active_id = ""
+        self.last_status = ""
+        self.last_scan = 0.0
+        self.rescan_requested = False
+
+        self.sel = selectors.DefaultSelector()
+        self.server: socket.socket | None = None
+        self.lock_handle = None
+
+    # -- lifecycle ---------------------------------------------------------
+
+    def prepare_runtime(self) -> None:
+        os.makedirs(RUNTIME_DIR, mode=0o755, exist_ok=True)
+        self.lock_handle = open(LOCK_PATH, "w", encoding="utf-8")
+        try:
+            fcntl.flock(self.lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            raise SystemExit(f"{APP}: another instance is already running")
+
+        if os.path.exists(SOCKET_PATH):
+            os.unlink(SOCKET_PATH)
+
+        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        server.bind(SOCKET_PATH)
+        os.chmod(SOCKET_PATH, 0o600)
+        os.chown(SOCKET_PATH, self.uid, self.gid)
+        server.listen(8)
+        server.setblocking(False)
+        self.server = server
+        self.sel.register(server, selectors.EVENT_READ, "server")
+
+        self.write_state()
+        self.write_device("")
+        self.refresh_status(force=True)
+
+    def write_state(self) -> None:
+        try:
+            with open(STATE_PATH, "w", encoding="utf-8") as handle:
+                handle.write(self.mode + "\n")
+            os.chmod(STATE_PATH, 0o644)
+            os.chown(STATE_PATH, self.uid, self.gid)
+        except OSError as exc:
+            log(f"cannot write {STATE_PATH}: {exc}")
+
+    def probe_device_name(self, fallback: str) -> None:
+        def work() -> None:
+            try:
+                raw = hidpp_device_name()
+            except Exception as exc:  # never let the probe hurt the daemon
+                log(f"hidpp name probe failed: {exc}")
+                raw = ""
+            self.device_name = friendly_device_name(raw) if raw else fallback
+            self.write_device(self.device_name)
+            self.refresh_status(force=True)
+            log(f"device name: {self.device_name}")
+
+        threading.Thread(target=work, name="hidpp-name", daemon=True).start()
+
+    def write_device(self, name: str) -> None:
+        try:
+            with open(DEVICE_PATH, "w", encoding="utf-8") as handle:
+                handle.write((name.strip() + "\n") if name else "")
+            os.chmod(DEVICE_PATH, 0o644)
+            os.chown(DEVICE_PATH, self.uid, self.gid)
+        except OSError as exc:
+            log(f"cannot write {DEVICE_PATH}: {exc}")
+
+    def refresh_status(self, force: bool = False) -> None:
+        now = time.monotonic()
+        if not force and now - self.last_scan < 2.0:
+            return
+        self.last_scan = now
+
+        excluded = [str(item).lower() for item in self.cfg["device"].get("exclude") or []]
+        devices, hidden = scan_pointers(excluded)
+        listed = []
+        active_name = ""
+        for device in devices:
+            name = device["name"]
+            if self.device_name and "logitech usb receiver" in device.get("raw", "").lower():
+                name = self.device_name
+            listed.append({"id": device["id"], "name": name})
+            if device["id"] == self.active_id:
+                active_name = name
+
+        status = {
+            "present": self.dev is not None,
+            "activeId": self.active_id,
+            "selectedId": str(self.cfg["device"].get("selected") or ""),
+            "name": active_name,
+            "hidden": hidden,
+            "devices": listed,
+        }
+        text = json.dumps(status, ensure_ascii=False)
+        if text == self.last_status:
+            return
+        self.last_status = text
+        try:
+            with open(STATUS_PATH, "w", encoding="utf-8") as handle:
+                handle.write(text + "\n")
+            os.chmod(STATUS_PATH, 0o644)
+            os.chown(STATUS_PATH, self.uid, self.gid)
+        except OSError as exc:
+            log(f"cannot write {STATUS_PATH}: {exc}")
+
+    # -- mode --------------------------------------------------------------
+
+    def activate(self, target: str = "scroll") -> str:
+        if target not in ("scroll", "sniper"):
+            target = "scroll"
+        if self.mode == target:
+            return self.mode
+        if self.dev is None:
+            return self.mode
+
+        if self.grabbed and self.ui is not None:
+            # Already scrolling: switching between scroll and sniper only
+            # changes the speed multiplier, so the device is not re-grabbed.
+            self.frame = []
+            self.converter.reset()
+            self._set_mode(target)
+            log(f"scroll mode {target}")
+            return self.mode
+
+        caps = {
+            event_type: codes
+            for event_type, codes in self.dev.capabilities(absinfo=False).items()
+            if codes and event_type != ecodes.EV_SYN
+        }
+        # libinput ignores the legacy wheel events while REL_WHEEL_HI_RES is
+        # advertised, so the capability has to follow the hi_res setting.
+        rel = set(caps.get(ecodes.EV_REL, []))
+        rel.update({ecodes.REL_WHEEL, ecodes.REL_HWHEEL})
+        if self.cfg["scroll"].get("hi_res", True):
+            rel.update({REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES})
+        else:
+            rel.discard(REL_WHEEL_HI_RES)
+            rel.discard(REL_HWHEEL_HI_RES)
+        caps[ecodes.EV_REL] = sorted(rel)
+
+        info = self.dev.info
+        try:
+            self.ui = evdev.UInput(
+                caps,
+                name=VIRTUAL_NAME,
+                vendor=info.vendor,
+                product=info.product,
+                version=info.version,
+                bustype=info.bustype,
+                phys=f"{APP}/virtual",
+            )
+        except OSError as exc:
+            log(f"cannot create the virtual pointer: {exc}")
+            self.ui = None
+            return self.mode
+
+        try:
+            self.dev.grab()
+        except OSError as exc:
+            log(f"cannot grab {self.dev.path}: {exc}")
+            self.ui.close()
+            self.ui = None
+            return self.mode
+
+        self.grabbed = True
+        self.frame = []
+        self.converter.reset()
+        self.drain()
+        self.last_activity = time.monotonic()
+        self.activated_at = self.last_activity
+        self._set_mode(target)
+        log(f"scroll mode {target}")
+        return self.mode
+
+    def _set_mode(self, mode: str) -> None:
+        self.mode = mode
+        self.converter.speed = self._speed()
+        self.write_state()
+
+    def _speed(self) -> float:
+        if self.mode != "sniper":
+            return 1.0
+        return max(0.0, float(self.cfg["scroll"].get("sniper_multiplier", 0.20) or 0.20))
+
+    def _ungrab(self) -> None:
+        if not self.grabbed or self.dev is None:
+            self.grabbed = False
+            return
+        try:
+            self.dev.ungrab()
+        except OSError as exc:
+            if exc.errno not in (errno.ENODEV, errno.EIO):
+                log(f"ungrab failed: {exc}")
+        self.grabbed = False
+
+    def deactivate(self) -> str:
+        self.press = None
+        if self.mode == "pointer":
+            return self.mode
+        self.mode = "pointer"
+        self.converter.speed = 1.0
+        if self.ui is not None:
+            try:
+                self.ui.close()
+            except OSError:
+                pass
+            self.ui = None
+        self._ungrab()
+        self.converter.reset()
+        self.frame = []
+        self.write_state()
+        log("pointer mode")
+        return self.mode
+
+    def toggle(self) -> str:
+        # A click that left scroll mode also lands on the bar widget; ignore the
+        # widget's toggle right after it so the click cannot re-enter scroll.
+        if time.monotonic() - self.last_click_exit < 0.35:
+            return self.mode
+        if self.mode == "pointer":
+            return self.activate("scroll")
+        return self.deactivate()
+
+    def toggle_sniper(self) -> str:
+        if self.mode == "sniper":
+            return self.activate("scroll")
+        if self.mode == "scroll":
+            return self.activate("sniper")
+        return self.mode
+
+    # -- tap / hold bindings ------------------------------------------------
+    #
+    # A tap toggles the mode and keeps it. Holding the same keys past
+    # hold_threshold_ms engages the mode only for as long as the key is held.
+
+    def _apply_action(self, action: str) -> str:
+        if action == "sniper":
+            return self.toggle_sniper()
+        return self.toggle()
+
+    def _restore(self, mode: str) -> str:
+        if mode == "pointer":
+            return self.deactivate()
+        if mode in ("scroll", "sniper"):
+            return self.activate(mode)
+        return self.mode
+
+    def hold_press(self, action: str) -> str:
+        self.press = {
+            "action": action,
+            "previous": self.mode,
+            "at": time.monotonic(),
+            "fired": False,
+        }
+        return self.mode
+
+    def hold_release(self, action: str) -> str:
+        press, self.press = self.press, None
+        if not press or press["action"] != action:
+            return self.mode
+        if press["fired"]:
+            return self._restore(press["previous"])
+        return self._apply_action(action)
+
+    def _fire_hold(self, now: float) -> None:
+        if not self.press or self.press["fired"]:
+            return
+        threshold = float(self.cfg.get("hold_threshold_ms") or 300) / 1000.0
+        if now - self.press["at"] < threshold:
+            return
+
+        self.press["fired"] = True
+        action = self.press["action"]
+        if action == "sniper":
+            if self.press["previous"] in ("scroll", "sniper"):
+                self.activate("sniper")
+        else:
+            self.activate("scroll")
+
+    # -- config ------------------------------------------------------------
+
+    def reload_config(self) -> None:
+        try:
+            self.cfg = load_config(self.config_path)
+        except FileNotFoundError:
+            log("config disappeared; keeping the previous one")
+            return
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            log(f"config reload failed ({exc}); keeping the previous one")
+            return
+        self.converter.configure(self.cfg)
+        self.converter.speed = self._speed()
+        log("config reloaded")
+
+    # -- device events -----------------------------------------------------
+
+    def drain(self) -> None:
+        """Discard events queued before the grab, without ever blocking."""
+        if self.dev is None:
+            return
+        while select.select([self.dev.fd], [], [], 0)[0]:
+            try:
+                list(self.dev.read())
+            except (BlockingIOError, OSError):
+                return
+
+    def read_device(self) -> None:
+        if self.dev is None:
+            return
+        try:
+            events = list(self.dev.read())
+        except BlockingIOError:
+            return
+        except OSError as exc:
+            if exc.errno in (errno.ENODEV, errno.EIO, errno.EBADF):
+                raise DeviceLost() from exc
+            if exc.errno == errno.EAGAIN:
+                return
+            raise
+
+        for event in events:
+            if event.type == ecodes.EV_SYN:
+                if event.code == ecodes.SYN_REPORT:
+                    frame, self.frame = self.frame, []
+                    self.handle_frame(frame)
+                elif event.code == ecodes.SYN_DROPPED:
+                    self.frame = []
+                    self.converter.reset()
+                continue
+            self.frame.append(event)
+
+    def handle_frame(self, frame: list) -> None:
+        if self.mode not in ("scroll", "sniper") or self.ui is None:
+            return
+
+        dx = 0
+        dy = 0
+        passthrough = []
+        click = False
+
+        for event in frame:
+            if event.type == ecodes.EV_REL and event.code in (ecodes.REL_X, ecodes.REL_Y):
+                if event.code == ecodes.REL_X:
+                    dx += event.value
+                else:
+                    dy += event.value
+                continue
+            if (
+                event.type == ecodes.EV_KEY
+                and ecodes.BTN_MOUSE <= event.code <= ecodes.BTN_TASK
+                and event.value == 1
+            ):
+                click = True
+            passthrough.append(event)
+
+        now = time.monotonic()
+        try:
+            for event in passthrough:
+                self.ui.write(event.type, event.code, event.value)
+            for event_type, code, value in self.converter.events(dx, dy, now):
+                self.ui.write(event_type, code, value)
+            self.ui.syn()
+        except OSError as exc:
+            raise DeviceLost() from exc
+
+        if dx or dy:
+            self.last_activity = now
+
+        if click and self.cfg.get("exit_on_click"):
+            self.last_click_exit = now
+            self.deactivate()
+
+    # -- control socket ----------------------------------------------------
+
+    def handle_command(self, line: str) -> str:
+        parts = line.strip().lower().split()
+        verb = parts[0] if parts else ""
+        arg = parts[1] if len(parts) > 1 else ""
+        log(f"command {verb} {arg}".strip())
+
+        if verb == "press":
+            return self.hold_press(arg or "toggle")
+        if verb == "release":
+            return self.hold_release(arg or "toggle")
+        if verb == "toggle":
+            return self.toggle()
+        if verb == "sniper":
+            return self.toggle_sniper()
+        if verb in ("on", "scroll"):
+            return self.activate("scroll")
+        if verb in ("off", "pointer"):
+            return self.deactivate()
+        if verb == "reload":
+            self.reload_config()
+            return self.mode
+        if verb == "rescan":
+            self.rescan_requested = True
+            return self.mode
+        if verb in ("status", "ping") or not verb:
+            return self.mode
+        return f"error: unknown command {verb!r}"
+
+    def accept(self) -> None:
+        if self.server is None:
+            return
+        try:
+            conn, _ = self.server.accept()
+        except OSError:
+            return
+        with conn:
+            conn.settimeout(0.2)
+            data = b""
+            try:
+                while b"\n" not in data and len(data) < 512:
+                    chunk = conn.recv(512)
+                    if not chunk:
+                        break
+                    data += chunk
+            except (socket.timeout, OSError):
+                pass
+            command = data.decode("utf-8", "replace").strip()
+            verb = command.split()[0] if command.split() else ""
+            if verb in ("toggle", "sniper", "press", "release", "on", "off", "scroll", "pointer", "rescan", ""):
+                self.reload_config()
+            try:
+                conn.sendall((self.handle_command(command) + "\n").encode())
+            except OSError:
+                pass
+
+    # -- main loop ---------------------------------------------------------
+
+    def tick(self, now: float) -> None:
+        self.refresh_status()
+        if self.reload_pending:
+            self.reload_pending = False
+            self.reload_config()
+        if self.toggle_pending:
+            self.toggle_pending = False
+            self.toggle()
+
+        self._fire_hold(now)
+
+        if self.press and self.press["fired"]:
+            hold_max = float(self.cfg.get("hold_max_seconds") or 0)
+            if hold_max > 0 and now - self.press["at"] >= hold_max:
+                log("hold safety timeout")
+                previous = self.press["previous"]
+                self.press = None
+                self._restore(previous)
+                return
+
+        if self.mode not in ("scroll", "sniper"):
+            return
+
+        auto_exit = float(self.cfg.get("auto_exit_seconds") or 0)
+        if auto_exit > 0 and now - self.last_activity >= auto_exit:
+            log("auto-exit after inactivity")
+            self.deactivate()
+
+    def run(self) -> None:
+        self.prepare_runtime()
+        signal.signal(signal.SIGTERM, self._stop)
+        signal.signal(signal.SIGINT, self._stop)
+        signal.signal(signal.SIGHUP, self._reload)
+        signal.signal(signal.SIGUSR1, self._toggle_signal)
+
+        announced_missing = False
+        try:
+            while self.running:
+                if self.dev is None:
+                    excluded = [str(item).lower() for item in self.cfg["device"].get("exclude") or []]
+                    found, _hidden = scan_pointers(excluded)
+                    target = choose_device(self.cfg, found)
+                    if target is None:
+                        if not announced_missing:
+                            log("pointing device not found, waiting for it")
+                            announced_missing = True
+                        self.refresh_status(force=True)
+                        self.wait_for_device(2.0)
+                        continue
+                    opened = open_pointer(target["path"])
+                    if opened is None:
+                        self.wait_for_device(1.0)
+                        continue
+                    self.dev = opened
+                    announced_missing = False
+                    self.active_id = target["id"]
+                    self.refresh_status(force=True)
+                    if self.device_name:
+                        self.write_device(self.device_name)
+                    else:
+                        self.write_device(self.dev.name)
+                        self.probe_device_name(self.dev.name)
+                    self.sel.register(self.dev.fd, selectors.EVENT_READ, "device")
+                try:
+                    self.serve()
+                except DeviceLost:
+                    log("device disconnected")
+                    self.deactivate()
+                finally:
+                    self.close_device()
+        finally:
+            self.shutdown()
+
+    def wait_for_device(self, timeout: float) -> None:
+        """Keep answering the control socket while no device is present."""
+        deadline = time.monotonic() + timeout
+        self.refresh_status()
+        while self.running:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            for key, _ in self.sel.select(timeout=remaining):
+                if key.data == "server":
+                    self.accept()
+            self.refresh_status()
+
+    def serve(self) -> None:
+        while self.running:
+            pending = self.press is not None and not self.press["fired"]
+            for key, _ in self.sel.select(timeout=0.05 if pending else 0.2):
+                if key.data == "device":
+                    self.read_device()
+                elif key.data == "server":
+                    self.accept()
+            if self.rescan_requested:
+                self.rescan_requested = False
+                return
+            self.tick(time.monotonic())
+
+    def close_device(self) -> None:
+        if self.dev is None:
+            return
+        try:
+            self.sel.unregister(self.dev.fd)
+        except (KeyError, ValueError, OSError):
+            pass
+        self.deactivate()
+        try:
+            self.dev.close()
+        except OSError:
+            pass
+        self.dev = None
+        self.active_id = ""
+        self.write_device("")
+        self.refresh_status(force=True)
+
+    def shutdown(self) -> None:
+        self.running = False
+        self.deactivate()
+        if self.server is not None:
+            try:
+                self.sel.unregister(self.server)
+            except (KeyError, ValueError):
+                pass
+            self.server.close()
+            self.server = None
+        try:
+            if os.path.exists(SOCKET_PATH):
+                os.unlink(SOCKET_PATH)
+        except OSError:
+            pass
+
+    # -- signals -----------------------------------------------------------
+
+    def _stop(self, *_args) -> None:
+        self.running = False
+
+    def _reload(self, *_args) -> None:
+        self.reload_pending = True
+
+    def _toggle_signal(self, *_args) -> None:
+        self.toggle_pending = True
+
+
+# -- diagnostics -----------------------------------------------------------
+
+
+def diagnose() -> int:
+    print(f"{APP}: input devices")
+    found = False
+    for path in event_paths():
+        try:
+            device = evdev.InputDevice(path)
+        except OSError as exc:
+            print(f"  {path}: cannot open ({exc})")
+            continue
+        with device:
+            caps = device.capabilities(absinfo=False)
+            rel = caps.get(ecodes.EV_REL, [])
+            keys = caps.get(ecodes.EV_KEY, [])
+            mouse_buttons = [ecodes.KEY[code] for code in keys if 0x110 <= code <= 0x11F]
+            mark = ""
+            if ecodes.REL_X in rel and ecodes.REL_Y in rel and ecodes.BTN_LEFT in keys:
+                mark = "  <= pointer candidate"
+                found = True
+            print(f"  {path}: {device.name!r}{mark}")
+            print(f"      REL: {', '.join(ecodes.REL[c] for c in rel) or '-'}")
+            print(f"      buttons: {', '.join(mouse_buttons) or '-'}")
+    if not found:
+        print("  no device with REL_X/REL_Y + BTN_LEFT found")
+    return 0
+
+
+def selftest() -> int:
+    def make(overrides: dict | None = None) -> ScrollConverter:
+        scroll = {
+            "counts_per_notch": 100.0,
+            "sensitivity": 1.0,
+            "invert_vertical": False,
+            "invert_horizontal": False,
+            "axis_lock": True,
+            "axis_window_seconds": 0.25,
+            "hi_res": True,
+        }
+        scroll.update(overrides or {})
+        converter = ScrollConverter()
+        converter.configure({"scroll": scroll})
+        return converter
+
+    now = 1.0
+    hi = 0
+    clicks = 0
+    converter = make()
+    for _ in range(10):  # 10 frames x 10 counts = 100 counts = one notch
+        for _event_type, code, value in converter.events(0, 10, now):
+            if code == REL_WHEEL_HI_RES:
+                hi += value
+            elif code == ecodes.REL_WHEEL:
+                clicks += value
+        now += 0.01
+    print(f"vertical: hi_res={hi} clicks={clicks}")
+    assert (hi, clicks) == (-HI_RES_PER_NOTCH, -1), (hi, clicks)
+
+    # Nothing is lost to rounding over many small frames.
+    converter = make()
+    total = 0
+    now += 1.0
+    for _ in range(1000):  # 1000 x 3 counts = 30 notches
+        for _event_type, _code, value in converter.events(0, 3, now):
+            if _code == REL_WHEEL_HI_RES:
+                total += value
+        now += 0.004
+    print(f"many frames: {total} hi-res units (expect {-30 * HI_RES_PER_NOTCH})")
+    assert total == -30 * HI_RES_PER_NOTCH, total
+
+    # Inverted vertical direction.
+    converter = make({"invert_vertical": True})
+    now += 1.0
+    inverted = sum(
+        value
+        for _event_type, _code, value in converter.events(0, 100, now)
+        if _code == REL_WHEEL_HI_RES
+    )
+    print(f"inverted: {inverted} hi-res units")
+    assert inverted == HI_RES_PER_NOTCH, inverted
+
+    # High-resolution disabled still produces discrete wheel clicks.
+    converter = make({"hi_res": False})
+    now += 1.0
+    clicks = sum(
+        value
+        for _event_type, code, value in converter.events(0, 250, now)
+        if code == ecodes.REL_WHEEL
+    )
+    print(f"legacy wheel: {clicks} clicks")
+    assert clicks == -2, clicks
+
+    # Axis lock keeps a diagonal gesture on its dominant axis.
+    converter = make()
+    now += 1.0
+    values = [
+        value
+        for _ in range(5)
+        for _event_type, _code, value in converter.events(20, 2, now)
+    ]
+    print(f"axis lock: {values} (horizontal only)")
+    assert values and all(value > 0 for value in values), values
+
+    # Sniper mode is the same converter at a lower speed multiplier.
+    converter = make()
+    converter.speed = 0.5
+    now += 1.0
+    total = 0
+    for _ in range(10):  # 10 x 10 counts = 100 counts, half speed = 0.5 notch
+        for _event_type, _code, value in converter.events(0, 10, now):
+            if _code == REL_WHEEL_HI_RES:
+                total += value
+        now += 0.01
+    print(f"sniper: {total} hi-res units (expect {-HI_RES_PER_NOTCH // 2})")
+    assert total == -HI_RES_PER_NOTCH // 2, total
+
+    # Horizontal gestures produce horizontal wheel events.
+    converter = make()
+    now += 1.0
+    horizontal = [
+        (code, value)
+        for _event_type, code, value in converter.events(100, 0, now)
+    ]
+    print(f"horizontal: {horizontal}")
+    assert (REL_HWHEEL_HI_RES, 120) in horizontal, horizontal
+    assert (ecodes.REL_HWHEEL, 1) in horizontal, horizontal
+    assert not [1 for (code, _v) in horizontal if code == REL_WHEEL_HI_RES]
+
+    # A vertical gesture followed by a clean horizontal one switches axis.
+    converter = make()
+    now += 1.0
+    for _ in range(3):
+        converter.events(0, 20, now)
+        now += 0.01
+    switched = [
+        (code, value)
+        for _event_type, code, value in converter.events(30, 0, now)
+        if code in (REL_WHEEL_HI_RES, REL_HWHEEL_HI_RES)
+    ]
+    print(f"axis switch: {switched}")
+    assert switched and switched[-1][0] == REL_HWHEEL_HI_RES, switched
+
+    print("selftest: ok")
+    return 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog=APP, description=__doc__)
+    parser.add_argument("--config", help="path to scrollmode.json")
+    parser.add_argument("--uid", type=int, default=0, help="owner of the control socket")
+    parser.add_argument("--gid", type=int, default=0, help="group of the control socket")
+    parser.add_argument("--diagnose", action="store_true", help="list input devices and exit")
+    parser.add_argument("--selftest", action="store_true", help="check the scroll math and exit")
+    args = parser.parse_args(argv)
+
+    if args.diagnose:
+        return diagnose()
+    if args.selftest:
+        return selftest()
+
+    uid = args.uid or int(os.environ.get("SUDO_UID") or 0)
+    gid = args.gid or int(os.environ.get("SUDO_GID") or 0)
+    if uid == 0:
+        log("warning: running with uid 0, the control socket will be root-only")
+
+    if args.config:
+        config_path = args.config
+    else:
+        try:
+            home = pwd.getpwuid(uid).pw_dir
+        except KeyError:
+            home = os.path.expanduser("~")
+        config_path = os.path.join(home, ".config", "omarchy", "scrollmode.json")
+
+    if not os.path.exists(config_path):
+        log(f"config not found: {config_path} (using defaults)")
+
+    log(f"starting (config {config_path})")
+    daemon = Daemon(config_path, uid, gid)
+    try:
+        daemon.run()
+    except Exception:  # keep the journal useful on unexpected failures
+        traceback.print_exc()
+        daemon.shutdown()
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

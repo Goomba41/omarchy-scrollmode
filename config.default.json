@@ -1,0 +1,26 @@
+{
+  "device": {
+    "match": "logitech",
+    "path": "",
+    "exclude": [
+      "omarchy-scrollmode"
+    ],
+    "selected": ""
+  },
+  "hotkey": "ALT + Z",
+  "sniper_hotkey": "ALT + S",
+  "hold_threshold_ms": 300,
+  "scroll": {
+    "counts_per_notch": 85,
+    "sensitivity": 1.0,
+    "sniper_multiplier": 0.2,
+    "invert_vertical": false,
+    "invert_horizontal": false,
+    "axis_lock": true,
+    "axis_window_seconds": 0.25,
+    "hi_res": true
+  },
+  "exit_on_click": true,
+  "auto_exit_seconds": 0,
+  "hold_max_seconds": 60
+}
