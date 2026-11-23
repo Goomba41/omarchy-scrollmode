@@ -43,5 +43,8 @@
   "setup.start": "Запустить…",
   "tip.stopped": "Трекбол: сервис остановлен — клик, чтобы запустить",
   "menu.inertia": "Инерция (докрутка)",
-  "menu.sniperButton": "Снайпер на боковой кнопке"
+  "menu.sniperButton": "Снайпер на боковой кнопке",
+  "mode.pointer": "Курсор",
+  "mode.scroll": "Скролл",
+  "mode.sniper": "Снайпер"
 }

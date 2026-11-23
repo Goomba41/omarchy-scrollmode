@@ -23,10 +23,11 @@ settings on a left click.
   you pick the one to grab. Selection survives reboots.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
-- **Drawn trackball icon**: a sphere with a real highlight and a rotating
-  pattern, red for pointer, blue for scroll, amber for sniper, with a micro-dot
-  in the bar. The settings header shows the same ball, spun fast and then slowly
-  while the panel is open.
+- **Drawn trackball**: a shaded sphere with a soft specular highlight and a
+  fine texture of scratches and dimples, red for pointer, blue for scroll,
+  amber for sniper. It fills the bar icon slot; the settings header shows the
+  same ball at 44 px, turning around its vertical axis (fast for a second, then
+  a slow idle turn) with a rounded mode badge next to the title.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, hi-res,
   leave-on-click, inertia, sniper button, hold threshold, auto-exit, reset,
   open config.
@@ -136,8 +137,9 @@ held. Bindings use physical keycodes, so they work on remapped layouts
 | dimmed ball | no pointing device is grabbed right now |
 
 The ball itself shows the mode: **red** pointer, **blue** scroll, **amber**
-sniper, with a small light dot in the corner. Pointer/scroll is toggled with
-`ALT + Z`, sniper with `ALT + S`; the bar no longer changes the mode.
+sniper. Pointer/scroll is toggled with `ALT + Z`, sniper with `ALT + S`; the
+bar no longer changes the mode. The ball in the panel header turns around its
+vertical axis, so its texture slides across the sphere and vanishes behind it.
 
 <p align="center">
   <img src="docs/icons.png" alt="pointer, scroll and sniper balls" width="120">

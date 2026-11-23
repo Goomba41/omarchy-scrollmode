@@ -43,5 +43,8 @@
   "setup.start": "Start…",
   "tip.stopped": "Trackball: service stopped — click to start",
   "menu.inertia": "Inertia (flick to coast)",
-  "menu.sniperButton": "Sniper on side button"
+  "menu.sniperButton": "Sniper on side button",
+  "mode.pointer": "Pointer",
+  "mode.scroll": "Scroll",
+  "mode.sniper": "Sniper"
 }

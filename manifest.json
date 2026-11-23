@@ -16,7 +16,7 @@
     "displayName": "Trackball Scroll",
     "description": "Trackball pointer/scroll mode indicator and toggle",
     "category": "System",
-    "defaultSection": "centerEnd",
+    "defaultSection": "center",
     "allowMultiple": false
   },
   "homepage": "https://github.com/Goomba41/omarchy-scrollmode",

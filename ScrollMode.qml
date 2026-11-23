@@ -26,12 +26,14 @@ Ui.Panel {
   readonly property bool scrolling: mode === "scroll" || mode === "sniper"
   readonly property bool sniper: mode === "sniper"
   readonly property color ballColor: root.sniper ? "#d9a441" : (root.scrolling ? "#5f87d9" : "#d95f5f")
+  readonly property string modeLabel: root.sniper
+    ? strings.t("mode.sniper")
+    : (root.scrolling ? strings.t("mode.scroll") : strings.t("mode.pointer"))
 
   property Component ballIcon: Component {
     TrackballBall {
       size: Style.bar.iconSize
       ballColor: root.ballColor
-      dot: true
     }
   }
 
@@ -272,14 +274,56 @@ Ui.Panel {
             width: Math.max(0, parent.width - headerBall.width - Style.space(12))
             spacing: Style.space(2)
 
-            Text {
+            Row {
+              id: titleRow
               width: parent.width
-              text: strings.t("menu.title")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              font.family: Style.font.family
-              font.pixelSize: Style.font.title
-              elide: Text.ElideRight
+              spacing: Style.space(8)
+
+              Text {
+                id: titleText
+                width: Math.min(implicitWidth,
+                  Math.max(0, titleRow.width - modeBadge.width - titleRow.spacing))
+                text: strings.t("menu.title")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.title
+                elide: Text.ElideRight
+              }
+
+              Rectangle {
+                id: modeBadge
+
+                anchors.verticalCenter: titleText.verticalCenter
+                implicitWidth: badgeRow.implicitWidth + Style.space(10)
+                implicitHeight: badgeRow.implicitHeight + Style.space(3)
+                radius: Style.space(4)
+                color: Qt.rgba(root.ballColor.r, root.ballColor.g, root.ballColor.b, 0.15)
+                border.width: 1
+                border.color: Qt.rgba(root.ballColor.r, root.ballColor.g, root.ballColor.b, 0.6)
+
+                Row {
+                  id: badgeRow
+                  anchors.centerIn: parent
+                  spacing: Style.space(3)
+
+                  Text {
+                    text: root.sniper ? "\uf05b" : (root.scrolling ? "\uf07d" : "\uf245")
+                    textFormat: Text.PlainText
+                    color: root.ballColor
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    text: root.modeLabel
+                    textFormat: Text.PlainText
+                    color: root.ballColor
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
             }
 
             Text {
@@ -348,9 +392,8 @@ Ui.Panel {
               text: strings.t("menu.device")
               textFormat: Text.PlainText
               color: Color.popups.text
-              opacity: 0.55
               font.family: Style.font.family
-              font.pixelSize: Style.font.caption
+              font.pixelSize: Style.font.body
             }
 
             Text {

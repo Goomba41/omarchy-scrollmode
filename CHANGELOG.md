@@ -8,13 +8,23 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- Drawn trackball icon (`TrackballBall.qml`): a shaded sphere with a static
-  highlight and a rotating pattern, instead of the three Nerd Font glyphs. Red
-  for pointer, blue for scroll, amber for sniper, with a micro-dot in the bar.
-- The settings header now shows the same ball at 44 px next to the title and the
+- Drawn trackball icon (`TrackballBall.qml`): a shaded sphere with a soft
+  specular highlight (base glow, white core, small light spot) and a fine
+  texture of scratches and dimples, instead of the three Nerd Font glyphs. Red
+  for pointer, blue for scroll, amber for sniper. The sphere fills the bar icon
+  slot, and its marks turn around the vertical axis, so they slide across the
+  ball and disappear behind it instead of spinning in the picture plane.
+- The settings header shows the same ball at 44 px next to the title and the
   device name in two lines. Opening the panel spins it fast for about a second,
   eases down and then keeps turning slowly (one turn per ten seconds) while the
-  panel is open. `omarchy toggle animations` turns the spin off.
+  panel is open. A rounded mode badge sits next to the title: the mode icon and
+  label in the mode color, over a dimmed mode-colored background with a
+  matching border. `omarchy toggle animations` turns the spin off.
+- The "Device" caption in the panel uses the same white body style as the other
+  labels; the hidden-device note stays a quiet caption.
+- `barWidget.defaultSection` is now `center`. The marketplace's Quattro contract
+  only accepts `left`, `center` or `right`, and Omarchy maps `center` to the
+  centerEnd slot, so the widget still lands where it did before.
 - Sniper on the side mouse button: holding `BTN_SIDE` (configurable, default
   275) while scrolling switches to the sniper speed for as long as it is held;
   releasing restores scroll. The button is swallowed so apps do not see "back".
