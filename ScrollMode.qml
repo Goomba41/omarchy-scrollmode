@@ -90,6 +90,25 @@ Ui.Panel {
   readonly property color doneColor: "#a7c080"
   readonly property color armedColor: "#dbbc7f"
 
+  property int tab: 0
+  property bool sniperDone: false
+  property int lastSniperCode: 0
+
+  onSniperCodeChanged: {
+    if (root.sniperCode > 0 && root.sniperCode !== root.lastSniperCode
+        && root.sniperCode === root.learnCode) {
+      root.sniperDone = true
+      sniperDoneTimer.restart()
+    }
+    root.lastSniperCode = root.sniperCode
+  }
+
+  Timer {
+    id: sniperDoneTimer
+    interval: 1500
+    onTriggered: root.sniperDone = false
+  }
+
   // The daemon lives outside the plugin (root, /usr/local, systemd). The panel
   // offers a one-click install that opens a terminal for the sudo prompt.
   property string serviceState: "active"  // active | stopped | missing
@@ -542,7 +561,33 @@ Ui.Panel {
           width: parent.width
           spacing: Style.space(10)
 
+          Row {
+            width: parent.width
+            spacing: Style.space(4)
+
+            Repeater {
+              model: [
+                strings.t("tab.scroll"),
+                strings.t("tab.feel"),
+                strings.t("tab.device")
+              ]
+
+              delegate: Ui.Button {
+                required property var modelData
+                required property int index
+                width: (parent.width - 2 * parent.spacing) / 3
+                height: Style.spacing.controlHeight
+                text: modelData
+                bordered: true
+                selected: root.tab === index
+                foreground: Color.popups.text
+                onClicked: root.tab = index
+              }
+            }
+          }
+
           SliderRow {
+            visible: root.tab === 0
             label: strings.t("menu.speed")
             hint: strings.t("menu.speedHint")
             help: strings.t("help.speed")
@@ -564,6 +609,7 @@ Ui.Panel {
           }
 
           SliderRow {
+            visible: root.tab === 0
             label: strings.t("menu.sniper")
             hint: strings.t("menu.sniperHint")
             help: strings.t("help.sniperSpeed")
@@ -579,21 +625,27 @@ Ui.Panel {
             onCommit: function(v) { root.setValue("scroll.sniper_multiplier", Number(v).toFixed(2)) }
           }
 
-          Ui.PanelSeparator { width: parent.width }
+          Ui.PanelSeparator {
+            visible: root.tab === 0
+            width: parent.width
+          }
 
           ToggleRow {
+            visible: root.tab === 0
             label: strings.t("menu.invertVertical")
             checked: root.bool("scroll.invert_vertical")
             onClicked: root.setValue("scroll.invert_vertical", !root.bool("scroll.invert_vertical"))
           }
 
           ToggleRow {
+            visible: root.tab === 0
             label: strings.t("menu.invertHorizontal")
             checked: root.bool("scroll.invert_horizontal")
             onClicked: root.setValue("scroll.invert_horizontal", !root.bool("scroll.invert_horizontal"))
           }
 
           ToggleRow {
+            visible: root.tab === 0
             label: strings.t("menu.axisLock")
             help: strings.t("help.axisLock")
             checked: root.bool("scroll.axis_lock")
@@ -601,6 +653,7 @@ Ui.Panel {
           }
 
           ToggleRow {
+            visible: root.tab === 0
             label: strings.t("menu.hiRes")
             help: strings.t("help.smooth")
             checked: root.bool("scroll.hi_res")
@@ -608,6 +661,7 @@ Ui.Panel {
           }
 
           ToggleRow {
+            visible: root.tab === 0
             label: strings.t("menu.exitOnClick")
             help: strings.t("help.exitOnClick")
             checked: root.bool("exit_on_click")
@@ -615,6 +669,7 @@ Ui.Panel {
           }
 
           ToggleRow {
+            visible: root.tab === 1
             label: strings.t("menu.inertia")
             help: strings.t("help.inertia")
             checked: root.bool("scroll.inertia")
@@ -622,7 +677,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.bool("scroll.inertia")
+            visible: root.tab === 1 && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaTrigger")
             help: strings.t("help.inertiaTrigger")
             valueText: strings.t("menu.perSecond").arg(Math.round(sliderValue))
@@ -636,7 +691,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.bool("scroll.inertia")
+            visible: root.tab === 1 && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaCoast")
             help: strings.t("help.inertiaCoast")
             valueText: Math.round(sliderValue) + " %"
@@ -650,7 +705,7 @@ Ui.Panel {
           }
 
           Column {
-            visible: root.sniperAvailable
+            visible: root.sniperAvailable && root.tab === 2
             width: parent.width
             spacing: Style.space(6)
 
@@ -669,11 +724,14 @@ Ui.Panel {
               Ui.Button {
                 width: parent.width - (sniperChooseHint.visible
                   ? sniperChooseHint.width + parent.spacing : 0)
-                text: root.sniperCode > 0
-                  ? strings.t("menu.sniperChange")
-                  : strings.t("menu.sniperChoose")
+                text: root.sniperDone
+                  ? strings.t("menu.done")
+                  : (root.sniperCode > 0
+                    ? strings.t("menu.sniperChange").arg(root.sniperButtonName)
+                    : strings.t("menu.sniperChoose"))
+                iconText: root.sniperDone ? "\uf00c" : ""
                 bordered: true
-                foreground: Color.popups.text
+                foreground: root.sniperDone ? root.doneColor : Color.popups.text
                 onClicked: Quickshell.execDetached([root.cli, "learn"])
               }
 
@@ -709,9 +767,13 @@ Ui.Panel {
             }
           }
 
-          Ui.PanelSeparator { width: parent.width }
+          Ui.PanelSeparator {
+            visible: root.tab === 1
+            width: parent.width
+          }
 
           SliderRow {
+            visible: root.tab === 1
             label: strings.t("menu.holdThreshold")
             help: strings.t("help.hold")
             valueText: strings.t("menu.ms").arg(Math.round(sliderValue))
@@ -725,6 +787,7 @@ Ui.Panel {
           }
 
           Column {
+            visible: root.tab === 1
             width: parent.width
             spacing: Style.space(4)
 
@@ -791,9 +854,13 @@ Ui.Panel {
             }
           }
 
-          Ui.PanelSeparator { width: parent.width }
+          Ui.PanelSeparator {
+            visible: root.tab === 2
+            width: parent.width
+          }
 
           Column {
+            visible: root.tab === 2
             width: parent.width
             spacing: Style.space(2)
 
@@ -832,6 +899,7 @@ Ui.Panel {
           }
 
           ActionButton {
+            visible: root.tab === 2
             width: parent.width
             idleText: strings.t("menu.openConfig")
             onActivated: Quickshell.execDetached(["omarchy-launch-editor", root.cfgPath])
@@ -839,6 +907,7 @@ Ui.Panel {
 
           Ui.Button {
             id: resetButton
+            visible: root.tab === 2
             width: parent.width
             property bool done: false
             property bool armed: false

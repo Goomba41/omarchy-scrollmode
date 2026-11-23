@@ -63,7 +63,7 @@
   "menu.inertiaTrigger": "Trigger",
   "menu.inertiaCoast": "Coast",
   "menu.perSecond": "%1 /s",
-  "menu.sniperChange": "Change button…",
+  "menu.sniperChange": "Change button (%1)",
   "menu.sniperChoose": "Choose sniper button…",
   "menu.sniperLearning": "Press a spare mouse button…",
   "menu.sniperReserved": "Left, right, middle, Back and Forward are reserved. Try another button.",
@@ -74,5 +74,8 @@
   "button.none": "not set",
   "help.inertiaTrigger": "How fast the ball must move before a flick coasts, in notches per second. Lower is easier to trigger.",
   "help.inertiaCoast": "How far the coast runs after a flick. 100 % is the default; higher is longer.",
-  "help.sniperChoose": "Pick a spare mouse button. Left, right, middle, Back and Forward are reserved and will be rejected."
+  "help.sniperChoose": "Pick a spare mouse button. Left, right, middle, Back and Forward are reserved and will be rejected.",
+  "tab.scroll": "Scroll",
+  "tab.feel": "Feel",
+  "tab.device": "Device"
 }

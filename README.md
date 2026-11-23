@@ -164,9 +164,11 @@ When no pointing device is available (or the service is stopped), the ball and
 the header badge turn gray and the badge reads **No device** with a broken-link
 icon.
 
-A circled question mark next to a setting opens a short tooltip explaining what
-it changes. Every control writes `~/.config/omarchy/scrollmode.json` through
-`omarchy-scrollmode set` and the daemon reloads immediately. Sliders snap to
+The settings are grouped into **Scroll**, **Feel** and **Device** tabs; the
+device picker stays above them. A circled question mark next to a setting opens
+a short tooltip explaining what it changes. Every control writes
+`~/.config/omarchy/scrollmode.json` through `omarchy-scrollmode set` and the
+daemon reloads immediately. Sliders snap to
 their step (5 % for speeds, 50 ms for the hold threshold).
 
 Every action confirms itself: the button, slider title, toggle or auto-exit chip
@@ -180,8 +182,9 @@ sniper speed; releasing it returns to normal scrolling. It is off by default.
 Press **Choose sniper button…** (or run `omarchy-scrollmode learn`) and then the
 button you want; the CLI captures its code. Left, right, middle, Back and
 Forward are reserved because they already have a standard meaning, so the
-option is hidden for devices that only have those buttons. The chosen button is
-swallowed while scrolling, so it cannot trigger a navigation action.
+option is hidden for devices that only have those buttons. The button shows the
+current choice and flashes **✓ Done** after a successful capture. The chosen
+button is swallowed while scrolling, so it cannot trigger a navigation action.
 
 ### Inertia
 

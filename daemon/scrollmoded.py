@@ -598,6 +598,10 @@ class ScrollConverter:
         horizontal = dx if not self.invert_h else -dx
         return self._axis_events(vertical, True) + self._axis_events(horizontal, False)
 
+    def guard_seconds(self) -> float:
+        """How long to wait for another frame before starting the coast."""
+        return min(0.04, max(0.010, self.frame_interval * 1.5))
+
     def _coast_at_peak(self) -> None:
         """Aim the coast at the fastest speed of the gesture, not its tail."""
         if self.axis_lock:
@@ -626,10 +630,9 @@ class ScrollConverter:
             return []
 
         if not self.inertia_active:
-            # Wait for roughly two missed frames, so a 125 Hz device starts
-            # its coast after ~20 ms instead of a fixed, visible 40 ms pause.
-            guard = min(0.05, max(0.02, self.frame_interval * 2.5))
-            if now - self.last_motion < guard:
+            # Wait for roughly one and a half frame intervals, so a 125 Hz
+            # device starts its coast after ~12 ms instead of a fixed pause.
+            if now - self.last_motion < self.guard_seconds():
                 return []
             if now - self.peak_at > 0.2 or self.peak_speed < self.inertia_min_speed:
                 return []
@@ -638,7 +641,7 @@ class ScrollConverter:
             # Do not turn the whole quiet gap into one large first frame: that
             # reads as a second kick after the app has already animated the
             # real scroll. One normal frame's worth is enough.
-            self.last_tick = max(self.last_motion, now - 0.016)
+            self.last_tick = max(self.last_motion, now - 0.008)
             self.inertia_axis = self.axis if self.axis_lock else None
             self._coast_at_peak()
             log(
@@ -767,6 +770,7 @@ class Daemon:
         self.last_seat_check = 0.0
         self.last_denied_log = 0.0
         self.learning_until = 0.0
+        self.learn_error_until = 0.0
         self.learn_code = 0
         self.learn_error = ""
         self.rescan_requested = False
@@ -1232,6 +1236,7 @@ class Daemon:
         changed = self.learning_until > 0.0 or self.learn_error != error
         self.learning_until = 0.0
         self.learn_error = error
+        self.learn_error_until = time.monotonic() + 8.0 if error else 0.0
         if changed:
             log(f"learn stopped ({error or 'ok'})")
             self.refresh_status(force=True)
@@ -1360,6 +1365,10 @@ class Daemon:
     # -- main loop ---------------------------------------------------------
 
     def tick(self, now: float) -> None:
+        if self.learn_error and self.learn_error_until and now > self.learn_error_until:
+            self.learn_error = ""
+            self.learn_error_until = 0.0
+            log("learn warning expired")
         self.refresh_status()
         if self.learning_until and now > self.learning_until:
             self.stop_learn("timeout")
@@ -1467,15 +1476,22 @@ class Daemon:
     def serve(self) -> None:
         while self.running:
             pending = self.press is not None and not self.press["fired"]
+            now = time.monotonic()
             if self.converter.inertia_active:
-                timeout = 0.016
-            elif self.mode in ("scroll", "sniper") and (
-                time.monotonic() - self.converter.last_motion < 0.15
-            ):
-                # Wake up soon after the ball stops so the coast starts while
-                # the flick still feels connected (the 40 ms guard still needs
-                # a few ticks).
-                timeout = 0.016
+                # 125 Hz output is visibly smoother than the old 60 Hz ticks.
+                timeout = 0.008
+            elif self.mode in ("scroll", "sniper"):
+                gap = now - self.converter.last_motion
+                guard = self.converter.guard_seconds()
+                if gap < guard:
+                    # Wake exactly when the guard expires, not a whole tick
+                    # later; this is the difference between a visible pause and
+                    # a continuous hand-off.
+                    timeout = max(0.002, min(0.012, guard - gap))
+                elif gap < 0.15:
+                    timeout = 0.008
+                else:
+                    timeout = 0.05 if pending else 0.2
             else:
                 timeout = 0.05 if pending else 0.2
             for key, _ in self.sel.select(timeout=timeout):

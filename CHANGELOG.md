@@ -13,6 +13,11 @@ All notable changes to this project are documented here. The format follows
 - Sniper trigger learning: choose a spare mouse button in the panel (or run
   `omarchy-scrollmode learn`) and press it once. The button is stored as
   `sniper_button`; the option is hidden when the device reports no spare button.
+- The settings panel is split into **Scroll**, **Feel** and **Device** tabs, so
+  the full list fits without filling the screen. The device picker stays above
+  the tabs.
+- The sniper button control shows the current button and flashes a green
+  **✓ Done** after a successful pick.
 
 ### Changed
 
@@ -23,15 +28,18 @@ All notable changes to this project are documented here. The format follows
   reserved and rejected during learning; an old `sniper_button: 275` config no
   longer steals the Back button.
 - Setting titles are shorter now that the tooltips explain them.
+- A rejected learn warning disappears after eight seconds instead of staying in
+  the panel.
 
 ### Fixed
 
-- Inertia starts after roughly two missed device frames (20–50 ms) instead of a
-  fixed 40 ms, and uses the fastest moment of the gesture instead of its slow
-  tail.
+- Inertia starts after about one and a half device frame intervals (roughly
+  12 ms at 125 Hz, clamped to 10–40 ms) instead of a fixed 40 ms, and uses the
+  fastest moment of the gesture instead of its slow tail. The coast ticks at
+  125 Hz instead of 60 Hz, which keeps the smooth scrolling animation alive.
 - A small movement during a coast clears the stale velocity and peak, so it
   cannot start a second coast from the same flick. This removes the occasional
-  double kick. The first coast frame is capped to one normal 16 ms frame so the
+  double kick. The first coast frame is capped to one normal 8 ms frame so the
   quiet gap does not read as another kick either.
 - Device enumeration is paused while scrolling. Scanning every input node took
   roughly 250 ms on a normal desktop; during a grabbed flick that stalled the
