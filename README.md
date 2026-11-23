@@ -42,7 +42,7 @@ can install and update it like any other plugin.
 ### As an Omarchy plugin (recommended)
 
 ```sh
-omarchy plugin add https://gitlab.com/anton-borodavkin/omarchy-scrollmode.git --enable
+omarchy plugin add https://github.com/Goomba41/omarchy-scrollmode.git --enable
 ```
 
 The widget appears in the bar. Right-click it once: while the daemon is missing,
@@ -69,12 +69,15 @@ the installer once (from the plugin directory) if the daemon changed:
 ~/.config/omarchy/plugins/anton.scrollmode/install.sh
 ```
 
+The canonical repository is on GitHub; a read-only mirror lives at
+[GitLab](https://gitlab.com/anton-borodavkin/omarchy-scrollmode).
+
 ### From a checkout
 
 The installer is also the manual path, and it installs both halves at once.
 
 ```sh
-git clone https://gitlab.com/anton-borodavkin/omarchy-scrollmode.git ~/Projects/omarchy-scrollmode
+git clone https://github.com/Goomba41/omarchy-scrollmode.git ~/Projects/omarchy-scrollmode
 cd ~/Projects/omarchy-scrollmode
 ./install.sh
 ```

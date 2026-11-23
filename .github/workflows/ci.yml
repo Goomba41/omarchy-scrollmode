@@ -1,0 +1,28 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install python-evdev
+        run: pip install evdev
+      - name: Python tests
+        run: |
+          python daemon/scrollmoded.py --selftest
+          python tests/test_frame.py
+      - name: Manifest and shell checks
+        run: |
+          bash -n install.sh
+          bash -n uninstall.sh
+          jq -e '.schemaVersion == 1' manifest.json
+          jq -e '(.kinds | type) == "array" and (.kinds | length) > 0' manifest.json
+          jq -e '(.entryPoints | type) == "object"' manifest.json
+          for ep in $(jq -r '.entryPoints[]' manifest.json); do test -f "$ep"; done
