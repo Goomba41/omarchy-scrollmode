@@ -375,6 +375,12 @@ in `~/.config/omarchy/scrollmode.json` is kept.
 - Trackballs have no standard HID flag, so device detection is identity-based
   (the device you picked), not classification.
 
+## Roadmap
+
+- Hotkey editor in the settings panel: capture a combination, validate it and
+  write it to the config.
+- More translations as the marketplace grows beyond English and Russian.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
