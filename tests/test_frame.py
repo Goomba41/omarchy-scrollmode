@@ -272,6 +272,25 @@ def main():
     print("inertia restart after cancel:", restarted, "events (expect 0)")
     assert restarted == 0, restarted
 
+    # The panel's "last flick" readout is a small JSON file.
+    import json
+    import tempfile
+    directory = tempfile.mkdtemp(prefix="scrollmode-inertia-")
+    path = os.path.join(directory, "inertia")
+    original_path = scrollmoded.INERTIA_PATH
+    try:
+        scrollmoded.INERTIA_PATH = path
+        daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
+        daemon.converter.last_peak_notches = 17.4
+        daemon.converter.peak_triggered = True
+        daemon.write_inertia()
+        with open(path) as handle:
+            readout = json.load(handle)
+        print("inertia readout:", readout)
+        assert readout == {"peak": 17.4, "coasted": True}, readout
+    finally:
+        scrollmoded.INERTIA_PATH = original_path
+
     print("frame path: ok")
     return 0
 

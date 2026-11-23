@@ -57,6 +57,17 @@ Ui.Panel {
   readonly property bool present: !!(status && status.present === true)
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
+  readonly property var inertiaInfo: {
+    var text = inertiaFile.text() || ""
+    if (!text) return ({})
+    try {
+      return JSON.parse(text)
+    } catch (error) {
+      return ({})
+    }
+  }
+  readonly property real lastPeak: Number(inertiaInfo.peak || 0)
+  readonly property bool lastCoasted: inertiaInfo.coasted === true
   readonly property bool sniperAvailable: !!(status && status.sniperAvailable === true)
   readonly property int sniperCode: (status && Number(status.sniperCode)) ? Number(status.sniperCode) : 0
   readonly property bool learning: !!(status && status.learning === true)
@@ -236,6 +247,15 @@ Ui.Panel {
     onFileChanged: reload()
   }
 
+  FileView {
+    id: inertiaFile
+    path: "/run/omarchy-scrollmode/inertia"
+    watchChanges: true
+    printErrors: false
+    blockLoading: true
+    onFileChanged: reload()
+  }
+
   // The daemon writes these files in place, but a service restart recreates
   // /run/omarchy-scrollmode and the inotify watch dies with the old inode.
   // A cheap periodic reload keeps the widget in sync regardless. The first
@@ -248,6 +268,7 @@ Ui.Panel {
       stateFile.reload()
       statusFile.reload()
       configFile.reload()
+      inertiaFile.reload()
     }
   }
 
@@ -681,6 +702,10 @@ Ui.Panel {
             label: strings.t("menu.inertiaTrigger")
             help: strings.t("help.inertiaTrigger")
             valueText: strings.t("menu.perSecond").arg(Math.round(sliderValue))
+            hint: root.lastPeak > 0
+              ? strings.t("menu.inertiaLast").arg(root.lastPeak.toFixed(1))
+                + (root.lastCoasted ? "  \u00b7  " + strings.t("menu.inertiaCoasted") : "")
+              : ""
             from: 4
             to: 30
             step: 1

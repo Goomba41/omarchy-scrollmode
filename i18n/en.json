@@ -72,10 +72,12 @@
   "button.extra": "Extra",
   "button.number": "Button %1",
   "button.none": "not set",
-  "help.inertiaTrigger": "How fast the ball must move before a flick coasts, in notches per second. Lower is easier to trigger.",
+  "help.inertiaTrigger": "How fast the ball must move before a flick coasts, in notches per second. The line below shows the speed of your last flick.",
   "help.inertiaCoast": "How far the coast runs after a flick. 100 % is the default; higher is longer.",
   "help.sniperChoose": "Pick a spare mouse button. Left, right, middle, Back and Forward are reserved and will be rejected.",
   "tab.scroll": "Scroll",
   "tab.feel": "Feel",
-  "tab.device": "Device"
+  "tab.device": "Device",
+  "menu.inertiaLast": "Last flick: %1 /s",
+  "menu.inertiaCoasted": "coast"
 }

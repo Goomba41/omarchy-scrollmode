@@ -18,6 +18,8 @@ All notable changes to this project are documented here. The format follows
   the tabs.
 - The sniper button control shows the current button and flashes a green
   **✓ Done** after a successful pick.
+- The Trigger line shows the speed of your last flick, in notches per second,
+  so the threshold can be matched to the hand.
 
 ### Changed
 
@@ -34,9 +36,11 @@ All notable changes to this project are documented here. The format follows
 ### Fixed
 
 - Inertia starts after about one and a half device frame intervals (roughly
-  12 ms at 125 Hz, clamped to 10–40 ms) instead of a fixed 40 ms, and uses the
-  fastest moment of the gesture instead of its slow tail. The coast ticks at
-  125 Hz instead of 60 Hz, which keeps the smooth scrolling animation alive.
+  12 ms at 125 Hz, clamped to 10–40 ms) instead of a fixed 40 ms. The trigger
+  and the coast use the raw frame peak over 300 ms instead of the smoothed
+  velocity: a short, sharp flick is no longer diluted to 35–58 % of its real
+  speed and no longer falls below the threshold. The coast ticks at 125 Hz
+  instead of 60 Hz, which keeps the smooth scrolling animation alive.
 - A small movement during a coast clears the stale velocity and peak, so it
   cannot start a second coast from the same flick. This removes the occasional
   double kick. The first coast frame is capped to one normal 8 ms frame so the

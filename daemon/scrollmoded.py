@@ -49,6 +49,7 @@ RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode"
 STATE_PATH = os.path.join(RUNTIME_DIR, "state")
 DEVICE_PATH = os.path.join(RUNTIME_DIR, "device")
 STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
+INERTIA_PATH = os.path.join(RUNTIME_DIR, "inertia")
 SOCKET_PATH = os.path.join(RUNTIME_DIR, "control.sock")
 LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
 
@@ -478,6 +479,10 @@ class ScrollConverter:
         self.inertia_axis: str | None = None
         self.inertia_started = 0.0
         self.last_tick = 0.0
+        self.gesture_reported = True
+        self.report_pending = False
+        self.last_peak_notches = 0.0
+        self.peak_triggered = False
 
     def _pick_axis(self, dx: int, dy: int, now: float) -> str | None:
         if not self.axis_lock:
@@ -567,6 +572,8 @@ class ScrollConverter:
         if previous and now - previous > 0.15:
             self.vel_x = 0.0
             self.vel_y = 0.0
+            self.peak_speed = 0.0
+            self.peak_at = 0.0
             previous = now - 0.016
 
         dt = max(0.001, now - previous) if previous else 0.016
@@ -582,16 +589,18 @@ class ScrollConverter:
             self.vel_x = 0.0
             self.vel_y = 0.0
         self.inertia_active = False
+        self.gesture_reported = False
         self.last_motion = now
         self.last_dx = dx
         self.last_dy = dy
 
-        # Remember the fastest moment of the gesture. A flick often ends with
-        # one or two slower frames; using the final smoothed speed made those
-        # flicks fall below the threshold and not coast at all.
-        speed = math.hypot(self.vel_x, self.vel_y)
-        if now - self.peak_at > 0.15 or speed > self.peak_speed:
-            self.peak_speed = speed
+        # Use the raw frame speed for the peak, not the smoothed velocity.
+        # A very short flick only gets 35 % of its real speed through the EMA,
+        # so it could miss the trigger while a longer flick at the same speed
+        # passed. Remember the fastest frame over 300 ms instead.
+        frame_speed = math.hypot(dx / dt, dy / dt)
+        if now - self.peak_at > 0.30 or frame_speed >= self.peak_speed:
+            self.peak_speed = frame_speed
             self.peak_at = now
 
         vertical = -dy if not self.invert_v else dy
@@ -634,7 +643,12 @@ class ScrollConverter:
             # device starts its coast after ~12 ms instead of a fixed pause.
             if now - self.last_motion < self.guard_seconds():
                 return []
-            if now - self.peak_at > 0.2 or self.peak_speed < self.inertia_min_speed:
+            if not self.gesture_reported:
+                self.gesture_reported = True
+                self.last_peak_notches = self.peak_speed / self.counts_per_notch
+                self.peak_triggered = self.peak_speed >= self.inertia_min_speed
+                self.report_pending = True
+            if now - self.peak_at > 0.30 or self.peak_speed < self.inertia_min_speed:
                 return []
             self.inertia_active = True
             self.inertia_started = now
@@ -791,6 +805,11 @@ class Daemon:
 
         if os.path.exists(SOCKET_PATH):
             os.unlink(SOCKET_PATH)
+        try:
+            if os.path.exists(INERTIA_PATH):
+                os.unlink(INERTIA_PATH)
+        except OSError:
+            pass
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
@@ -1198,11 +1217,28 @@ class Daemon:
             self.last_click_exit = now
             self.deactivate()
 
+    def write_inertia(self) -> None:
+        data = {
+            "peak": round(self.converter.last_peak_notches, 1),
+            "coasted": bool(self.converter.peak_triggered),
+        }
+        try:
+            with open(INERTIA_PATH, "w", encoding="utf-8") as handle:
+                json.dump(data, handle)
+                handle.write("\n")
+            os.chmod(INERTIA_PATH, 0o644)
+            os.chown(INERTIA_PATH, self.uid, self.gid)
+        except OSError as exc:
+            log(f"cannot write {INERTIA_PATH}: {exc}")
+
     def flush_inertia(self) -> None:
         """Emit the coasting events after a flick, on a timer of its own."""
         if self.ui is None or self.mode not in ("scroll", "sniper"):
             return
         events = self.converter.inertia_events(time.monotonic())
+        if self.converter.report_pending:
+            self.converter.report_pending = False
+            self.write_inertia()
         if not events:
             return
         try:
@@ -1755,6 +1791,21 @@ def selftest() -> int:
                 coast += value
     print(f"inertia below threshold: {coast} events (expect 0)")
     assert coast == 0, coast
+
+    # One very short fast frame still triggers: the raw peak is not attenuated
+    # by the velocity smoothing.
+    converter = make({"inertia": True})
+    now += 10.0
+    converter.events(0, 20, now)  # 20 counts / 16 ms = 1250 counts/s
+    coast = 0
+    for _ in range(100):
+        now += 0.016
+        for _event_type, code, value in converter.inertia_events(now):
+            if code == REL_WHEEL_HI_RES:
+                coast += value
+    print(f"inertia short flick: {coast} hi-res units, peak {converter.last_peak_notches:.1f}/s")
+    assert coast < 0, coast
+    assert converter.last_peak_notches > 12, converter.last_peak_notches
 
     print("selftest: ok")
     return 0

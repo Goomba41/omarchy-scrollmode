@@ -199,6 +199,10 @@ The panel exposes two controls when it is on:
 - **Coast** — how far it keeps going, in percent (default 100). Higher is
   longer.
 
+The line under Trigger shows the speed of your last flick, for example
+`Last flick: 17.4 /s · coast`, so you can compare it with the trigger and tune
+it to your hand.
+
 ### Choosing the device
 
 The **Device** dropdown lists every pointing device (a device with
