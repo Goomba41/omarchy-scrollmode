@@ -18,5 +18,7 @@
     "category": "System",
     "defaultSection": "centerEnd",
     "allowMultiple": false
-  }
+  },
+  "homepage": "https://gitlab.com/anton-borodavkin/omarchy-scrollmode",
+  "repository": "https://gitlab.com/anton-borodavkin/omarchy-scrollmode"
 }
