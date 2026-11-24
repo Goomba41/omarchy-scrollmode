@@ -25,11 +25,12 @@ settings on a left click.
   survives reboots.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
-- **Drawn trackball**: a shaded sphere with a soft specular highlight and a
-  fine texture of scratches and dimples, red for pointer, blue for scroll,
-  amber for sniper. It fills the bar icon slot; the settings header shows the
-  same ball at 44 px, turning around its vertical axis (fast for a second, then
-  a slow idle turn) with a rounded mode badge next to the title.
+- **Drawn device icons**: the trackball is a shaded sphere with a specular
+  highlight and a fine texture, red for pointer, blue for scroll, amber for
+  sniper. A mouse gets its own top-down glyph with a mode-coloured wheel and
+  side button. The icon opens with a short settle and then idles; clicking the
+  trackball kicks it into a spin, and fast movement draws white air streaks
+  around the ball. Icons fill the bar slot and the 44 px settings header.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
@@ -155,10 +156,16 @@ held. Bindings use physical keycodes, so they work on remapped layouts
 | right click | nothing (kept free) |
 | gray ball | no pointing device is grabbed, or the service is stopped |
 
-The ball itself shows the mode: **red** pointer, **blue** scroll, **amber**
-sniper. Pointer/scroll is toggled with `ALT + Z`, sniper with `ALT + S`; the
-bar no longer changes the mode. The ball in the panel header turns around its
+The icon shows the mode: **red** pointer, **blue** scroll, **amber** sniper.
+Pointer/scroll is toggled with `ALT + Z`, sniper with `ALT + S`; the bar no
+longer changes the mode. The trackball in the panel header turns around its
 vertical axis, so its texture slides across the sphere and vanishes behind it.
+Click it to give it a deliberate spin: the ball accelerates, then brakes back
+to the slow idle turn, with white air streaks while it is moving fast.
+
+For a mouse the header and bar icon switch to a top-down mouse glyph. It
+settles when the panel opens, breathes a soft sensor glow while idle, and
+presses its body / spins its wheel when clicked.
 
 <p align="center">
   <img src="docs/icons.png" alt="pointer, scroll and sniper balls" width="120">

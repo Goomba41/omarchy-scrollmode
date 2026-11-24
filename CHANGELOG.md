@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.0] — 2026-11-24
+
+### Added
+
+- A top-down mouse glyph for mouse devices, with split buttons, a
+  mode-coloured wheel and side button. It has an opening settle, a slow idle
+  sensor glow, and a click animation that presses the body and spins the wheel.
+- A `DeviceIcon` selector used by both the bar and the panel header; future
+  trackpad and unknown glyphs can plug in here.
+- Clicking the trackball in the panel header kicks it into a deliberate
+  spin-up and braking animation.
+- White air streaks around the trackball while it moves faster than a
+  threshold, fading in with speed and disappearing at idle.
+- Both animations respect `Style.reduceMotion`.
+
 ## [1.6.0] — 2026-11-24
 
 ### Added

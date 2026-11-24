@@ -40,10 +40,11 @@ Ui.Panel {
       implicitWidth: Style.bar.iconSize
       implicitHeight: Style.bar.iconSize
 
-      TrackballBall {
+      DeviceIcon {
         anchors.fill: parent
         size: Style.bar.iconSize
-        ballColor: root.ballColor
+        color: root.ballColor
+        kind: root.deviceKind
       }
 
       Canvas {
@@ -698,12 +699,19 @@ Ui.Panel {
           width: parent.width
           height: Math.max(headerBall.height, headerText.implicitHeight)
 
-          TrackballBall {
+          DeviceIcon {
             id: headerBall
             size: Style.space(44)
-            ballColor: root.ballColor
-            spinning: root.opened
+            color: root.ballColor
+            kind: root.deviceKind
+            opened: root.opened
             shadow: true
+          }
+
+          MouseArea {
+            anchors.fill: headerBall
+            cursorShape: Qt.PointingHandCursor
+            onClicked: headerBall.kick()
           }
 
           Column {

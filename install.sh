@@ -108,6 +108,8 @@ else
   install -m644 "$PLUGIN_SRC/manifest.json" "$PLUGIN_DST/manifest.json"
   install -m644 "$PLUGIN_SRC/ScrollMode.qml" "$PLUGIN_DST/ScrollMode.qml"
   install -m644 "$PLUGIN_SRC/TrackballBall.qml" "$PLUGIN_DST/TrackballBall.qml"
+  install -m644 "$PLUGIN_SRC/MouseGlyph.qml" "$PLUGIN_DST/MouseGlyph.qml"
+  install -m644 "$PLUGIN_SRC/DeviceIcon.qml" "$PLUGIN_DST/DeviceIcon.qml"
   install -m644 "$PLUGIN_SRC"/i18n/*.json "$PLUGIN_DST/i18n/"
   install -m755 "$PLUGIN_SRC/install.sh" "$PLUGIN_DST/install.sh"
   install -m755 "$PLUGIN_SRC/uninstall.sh" "$PLUGIN_DST/uninstall.sh"

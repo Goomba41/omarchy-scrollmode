@@ -19,6 +19,15 @@ Item {
   readonly property real fastSpeed: 900   // deg/s, about 2.5 turns per second
   readonly property real slowSpeed: 36    // deg/s, one turn per ten seconds
   readonly property real rampSeconds: 1.2
+  readonly property real kickSpeed: 1400  // deg/s, a deliberate finger flick
+  readonly property real kickSeconds: 1.8
+  readonly property real airThreshold: 260
+  readonly property real airMargin: Math.max(3, size * 0.09)
+  readonly property real airAmount: Math.max(0, Math.min(1,
+    (speed - airThreshold) / (kickSpeed - airThreshold)))
+  property bool kickActive: false
+  property real kickElapsed: 0
+  property bool airWasVisible: false
 
   // Deterministic surface texture. Each mark has a latitude (sine of it), a
   // longitude phase and a size; the delegate projects it onto the sphere for
@@ -53,25 +62,93 @@ Item {
   height: size
 
   onSpinningChanged: {
-    if (spinning) {
+    if (spinning && !kickActive) {
       elapsed = 0
       speed = fastSpeed
     }
   }
 
+  function kick() {
+    if (Style.reduceMotion) return
+    kickActive = true
+    kickElapsed = 0
+    if (!spinning) speed = slowSpeed
+  }
+
   FrameAnimation {
-    running: ball.spinning && !Style.reduceMotion
+    running: (ball.spinning || ball.kickActive) && !Style.reduceMotion
     onTriggered: {
-      ball.elapsed += frameTime
-      var ramp = Math.min(1, ball.elapsed / ball.rampSeconds)
-      ball.speed = ball.slowSpeed + (ball.fastSpeed - ball.slowSpeed) * Math.pow(1 - ramp, 2)
+      if (ball.kickActive) {
+        ball.kickElapsed += frameTime
+        if (ball.kickElapsed < 0.12) {
+          var up = ball.kickElapsed / 0.12
+          ball.speed = ball.slowSpeed + (ball.kickSpeed - ball.slowSpeed) * up
+        } else {
+          var down = Math.min(1, (ball.kickElapsed - 0.12) / ball.kickSeconds)
+          ball.speed = ball.slowSpeed
+            + (ball.kickSpeed - ball.slowSpeed) * Math.pow(1 - down, 2)
+        }
+        if (ball.kickElapsed >= 0.12 + ball.kickSeconds) {
+          ball.kickActive = false
+          ball.speed = ball.slowSpeed
+        }
+      } else {
+        ball.elapsed += frameTime
+        var ramp = Math.min(1, ball.elapsed / ball.rampSeconds)
+        ball.speed = ball.slowSpeed
+          + (ball.fastSpeed - ball.slowSpeed) * Math.pow(1 - ramp, 2)
+      }
       ball.angle = (ball.angle + ball.speed * frameTime) % 360
+      if (ball.airAmount > 0 || ball.airWasVisible) {
+        ball.airWasVisible = ball.airAmount > 0
+        airflow.requestPaint()
+      }
     }
+  }
+
+  // Air streaks live outside the sphere, so this canvas is larger than the
+  // ball. It is only painted while the ball is moving above the threshold.
+  Canvas {
+    id: airflow
+    x: -ball.airMargin
+    y: -ball.airMargin
+    width: ball.size + ball.airMargin * 2
+    height: width
+    visible: !Style.reduceMotion && ball.airAmount > 0
+    antialiasing: true
+    z: 0
+
+    onPaint: {
+      var ctx = getContext("2d")
+      ctx.reset()
+      var w = width
+      var h = height
+      var cx = w / 2
+      var cy = h / 2
+      var r = ball.size / 2 + ball.airMargin * 0.25
+      var amount = ball.airAmount
+      if (amount <= 0) return
+      ctx.lineCap = "round"
+      for (var i = 0; i < 5; i++) {
+        var angle = (i * 72 + ball.angle * 0.32) * Math.PI / 180
+        var span = (0.10 + amount * 0.22) * Math.PI
+        ctx.beginPath()
+        ctx.arc(cx, cy, r + (i % 2) * ball.airMargin * 0.25,
+          angle, angle + span)
+        ctx.strokeStyle = "rgba(255,255,255," + (0.08 + amount * 0.38) + ")"
+        ctx.lineWidth = Math.max(1, ball.size * (0.025 + amount * 0.025))
+        ctx.stroke()
+      }
+    }
+
+    onWidthChanged: requestPaint()
+    onHeightChanged: requestPaint()
   }
 
   Canvas {
     id: sphere
     anchors.fill: parent
+    z: 1
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
@@ -167,6 +244,7 @@ Item {
   // squashes by cos(longitude), and the far half is hidden behind the ball.
   Item {
     anchors.fill: parent
+    z: 2
 
     Repeater {
       model: ball.specks
