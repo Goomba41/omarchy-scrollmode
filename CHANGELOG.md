@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.1] — 2026-11-24
+
+### Changed
+
+- The cursor arrow is now a massive rounded triangle with no thin stem. Its
+  corners are softened and the extrusion is thicker, so it reads as a solid
+  pointer instead of a sharp shard.
+- The front-face highlight is projected with the arrow and clipped to its
+  face, so it turns with the cursor instead of staying in screen space.
+- The horizontal scale never collapses below a small minimum and the light
+  edge is always drawn, removing the blink at the edge-on angle.
+
 ## [1.8.0] — 2026-11-24
 
 ### Changed

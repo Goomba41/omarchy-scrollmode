@@ -1,9 +1,9 @@
 import QtQuick
 import qs.Commons
 
-// A cursor-arrow glyph for mouse devices. The arrow is a solid 3D badge that
-// turns around its vertical axis: slow while idle, fast with air streaks on a
-// click. Opening glides in and starts the idle turn.
+// A cursor-arrow badge for mouse devices. The arrow is a rounded, extruded
+// triangle that turns around its vertical axis: slowly while idle, fast with
+// air streaks on a click. Opening glides in and starts the idle turn.
 Item {
   id: cursor
 
@@ -151,32 +151,62 @@ Item {
         ctx.arc(0, 0, 1, 0, Math.PI * 2)
         ctx.restore()
       }
+      function roundedPolygon(points, radius) {
+        var out = []
+        var n = points.length
+        for (var i = 0; i < n; i++) {
+          var p = points[i]
+          var prev = points[(i + n - 1) % n]
+          var next = points[(i + 1) % n]
+          var ax = p[0] - prev[0]
+          var ay = p[1] - prev[1]
+          var al = Math.max(0.001, Math.hypot(ax, ay))
+          var bx = next[0] - p[0]
+          var by = next[1] - p[1]
+          var bl = Math.max(0.001, Math.hypot(bx, by))
+          var p1 = [p[0] - ax / al * radius, p[1] - ay / al * radius]
+          var p2 = [p[0] + bx / bl * radius, p[1] + by / bl * radius]
+          for (var t = 0; t <= 6; t++) {
+            var u = t / 6
+            var v = 1 - u
+            out.push([
+              v * v * p1[0] + 2 * v * u * p[0] + u * u * p2[0],
+              v * v * p1[1] + 2 * v * u * p[1] + u * u * p2[1]
+            ])
+          }
+        }
+        return out
+      }
+
       var w = width
       var h = height
       if (w <= 0 || h <= 0) return
       var cx = w / 2
       var cy = h / 2
 
-      // Classic cursor arrow, mapped into the icon with a little padding.
-      var pts = [
-        [5.0, 3.0], [20.0, 13.0], [12.2, 13.0], [16.0, 21.0],
-        [12.8, 22.2], [9.0, 14.0], [5.0, 18.2]
-      ]
-      var scale = w * 0.80 / 19.2
-      var ox = cx - 12.5 * scale
-      var oy = cy - 12.6 * scale
+      // A massive rounded pointer triangle, with no thin stem.
+      var local = [[4.5, 3.0], [20.0, 14.4], [10.6, 21.0]]
+      var points = roundedPolygon(local, 2.0)
+      var scale = w * 0.82 / 18.5
+      var ox = cx - 12.25 * scale
+      var oy = cy - 12.0 * scale
       var rad = cursor.angle * Math.PI / 180
       var ca = Math.cos(rad)
       var sa = Math.sin(rad)
-      var depth = Math.max(1.2, w * 0.070) * sa
+      // Keep a little width at the edge-on moment instead of blinking out.
+      var sx = (ca >= 0 ? 1 : -1) * Math.max(0.17, Math.abs(ca))
+      var depth = Math.max(1.2, w * 0.075) * sa
+
+      function project(p) {
+        return [cx + (ox + p[0] * scale - cx) * sx, oy + p[1] * scale]
+      }
+
       var front = []
       var back = []
-      for (var i = 0; i < pts.length; i++) {
-        var px = ox + pts[i][0] * scale
-        var py = oy + pts[i][1] * scale
-        var fx = cx + (px - cx) * ca
-        front.push([fx, py])
-        back.push([fx + depth, py])
+      for (var i = 0; i < points.length; i++) {
+        var f = project(points[i])
+        front.push(f)
+        back.push([f[0] + depth, f[1]])
       }
 
       if (cursor.shadow) {
@@ -189,8 +219,17 @@ Item {
         ctx.fill()
       }
 
-      // Extruded side first, then the front face.
-      var side = Qt.darker(cursor.color, 2.3)
+      // Back face and side extrusion.
+      ctx.beginPath()
+      ctx.moveTo(back[0][0], back[0][1])
+      for (var b = 1; b < back.length; b++)
+        ctx.lineTo(back[b][0], back[b][1])
+      ctx.closePath()
+      ctx.fillStyle = Qt.darker(cursor.color, 2.5)
+      ctx.globalAlpha = 0.92
+      ctx.fill()
+
+      ctx.fillStyle = Qt.darker(cursor.color, 2.15)
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
         ctx.beginPath()
@@ -199,17 +238,18 @@ Item {
         ctx.lineTo(back[n][0], back[n][1])
         ctx.lineTo(back[e][0], back[e][1])
         ctx.closePath()
-        ctx.fillStyle = side
-        ctx.globalAlpha = 0.9
         ctx.fill()
       }
       ctx.globalAlpha = 1
 
-      var face = ctx.createLinearGradient(cx - w * 0.24, h * 0.18,
-        cx + w * 0.22, h * 0.82)
-      face.addColorStop(0, Qt.lighter(cursor.color, 1.35))
-      face.addColorStop(0.45, cursor.color)
-      face.addColorStop(1, Qt.darker(cursor.color, 1.36))
+      // Front face. The gradient is projected with the face, so it turns with
+      // the arrow instead of sitting in screen space.
+      var la = project([6.0, 5.0])
+      var lb = project([16.0, 18.0])
+      var face = ctx.createLinearGradient(la[0], la[1], lb[0], lb[1])
+      face.addColorStop(0, Qt.lighter(cursor.color, 1.36))
+      face.addColorStop(0.48, cursor.color)
+      face.addColorStop(1, Qt.darker(cursor.color, 1.40))
       ctx.beginPath()
       ctx.moveTo(front[0][0], front[0][1])
       for (var j = 1; j < front.length; j++)
@@ -217,32 +257,35 @@ Item {
       ctx.closePath()
       ctx.fillStyle = face
       ctx.fill()
-      ctx.lineWidth = Math.max(1, w * 0.018)
-      ctx.strokeStyle = Qt.darker(cursor.color, 2.0)
-      ctx.globalAlpha = 0.65
+
+      // Soft specular spot, clipped to the face so it shrinks naturally as
+      // the arrow turns edge-on.
+      ctx.save()
+      ctx.beginPath()
+      ctx.moveTo(front[0][0], front[0][1])
+      for (var k = 1; k < front.length; k++)
+        ctx.lineTo(front[k][0], front[k][1])
+      ctx.closePath()
+      ctx.clip()
+      var hp = project([7.5, 6.2])
+      var spot = ctx.createRadialGradient(hp[0], hp[1], 0,
+        hp[0], hp[1], w * 0.20)
+      spot.addColorStop(0, "rgba(255,255,255,0.30)")
+      spot.addColorStop(0.45, "rgba(255,255,255,0.08)")
+      spot.addColorStop(1, "rgba(255,255,255,0)")
+      ctx.fillStyle = spot
+      ctx.fillRect(0, 0, w, h)
+      ctx.restore()
+
+      // A light leading edge is always present, so a profile view still reads.
+      ctx.beginPath()
+      ctx.moveTo(front[0][0], front[0][1])
+      for (var m = 1; m < front.length; m++)
+        ctx.lineTo(front[m][0], front[m][1])
+      ctx.closePath()
+      ctx.lineWidth = Math.max(1, w * 0.014)
+      ctx.strokeStyle = "rgba(255,255,255,0.24)"
       ctx.stroke()
-      ctx.globalAlpha = 1
-
-      // A thin light edge keeps the arrow readable while it is nearly edge-on.
-      if (Math.abs(ca) < 0.16) {
-        ctx.beginPath()
-        ctx.moveTo(cx - Math.abs(depth) * 0.5, h * 0.16)
-        ctx.lineTo(cx + Math.abs(depth) * 0.5, h * 0.84)
-        ctx.strokeStyle = "rgba(255,255,255,0.45)"
-        ctx.lineWidth = Math.max(1, w * 0.016)
-        ctx.stroke()
-      }
-
-      // Highlight on the front tip.
-      if (ca > 0.1) {
-        var hl = ctx.createRadialGradient(
-          cx - w * 0.15, h * 0.26, 0,
-          cx - w * 0.15, h * 0.26, w * 0.24)
-        hl.addColorStop(0, "rgba(255,255,255,0.30)")
-        hl.addColorStop(1, "rgba(255,255,255,0)")
-        ctx.fillStyle = hl
-        ctx.fillRect(0, 0, w, h)
-      }
     }
 
     Connections {
