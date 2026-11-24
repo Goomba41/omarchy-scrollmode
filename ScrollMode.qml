@@ -100,7 +100,7 @@ Ui.Panel {
   readonly property var statDays: (statsInfo && statsInfo.days) ? statsInfo.days : ({})
   readonly property string statTodayKey: Qt.formatDate(new Date(), "yyyy-MM-dd")
   readonly property var statToday: statDays[root.statTodayKey] || ({})
-  readonly property real statTodayNotches: Number(statToday.notches || 0)
+  readonly property real statTodayKm: root.dayKm(statToday)
   readonly property int statActiveDays: Object.keys(statDays).length
   readonly property string statBestKey: {
     var best = ""
@@ -114,8 +114,7 @@ Ui.Panel {
     }
     return best
   }
-  readonly property real statBestNotches: root.statBestKey !== ""
-    ? Number((statDays[root.statBestKey] || {}).notches || 0) : 0
+  readonly property real statBestKm: root.dayKm(statDays[root.statBestKey] || ({}))
   readonly property string statBestLabel: {
     if (root.statBestKey === "") return "—"
     var date = new Date(root.statBestKey + "T12:00:00")
@@ -172,13 +171,27 @@ Ui.Panel {
     return Number(km) * 1000 / root.ballCircumference
   }
 
-  function statProgress(turns, target) {
+  function statProgressPercent(turns, target) {
     var value = Number(turns)
     var goal = Number(target)
-    if (!(value > 0) || !(goal > 0)) return "—"
-    var ratio = value / goal
-    if (ratio >= 0.01) return fmtNumber(ratio * 100, ratio >= 0.1 ? 1 : 2) + " %"
-    return strings.t("stats.oneIn").arg(fmtNumber(1 / ratio, 0))
+    if (!(value > 0) || !(goal > 0)) return "0 %"
+    var percent = value / goal * 100
+    var digits = percent >= 1 ? 2 : percent >= 0.01 ? 4
+      : percent >= 0.0001 ? 6 : percent >= 0.000001 ? 8 : 10
+    var text = percent.toFixed(digits)
+    if (text.indexOf(".") >= 0) {
+      text = text.replace(/0+$/, "").replace(/\.$/, "")
+    }
+    return text + " %"
+  }
+
+  function dayKm(day) {
+    var entry = day || {}
+    var counts = Number(entry.counts || 0)
+    if (counts > 0) return counts / countsPerTurn * ballCircumference / 1000
+    var notches = Number(entry.notches || 0)
+    var cpn = root.statNotches > 0 ? root.statCounts / root.statNotches : 85
+    return notches * cpn / countsPerTurn * ballCircumference / 1000
   }
 
   readonly property var deviceOptions: {
@@ -704,162 +717,210 @@ Ui.Panel {
             }
           }
 
-          Column {
+          Flickable {
+            id: statsFlick
             visible: root.tab === 3
             width: parent.width
-            spacing: Style.space(8)
-
-            Text {
-              visible: root.statFlicks === 0
-              width: parent.width
-              text: strings.t("stats.empty")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.65
-              font.family: Style.font.family
-              font.pixelSize: Style.font.body
-              wrapMode: Text.WordWrap
-            }
+            height: Math.min(statsColumn.implicitHeight, Style.space(500))
+            contentWidth: width
+            contentHeight: statsColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
+            interactive: contentHeight > height
 
             Column {
-              visible: root.statFlicks > 0
+              id: statsColumn
               width: parent.width
-              spacing: Style.space(2)
+              spacing: Style.space(8)
 
               Text {
+                visible: root.statFlicks === 0
                 width: parent.width
-                text: strings.t("stats.topSpeed")
+                text: strings.t("stats.empty")
                 textFormat: Text.PlainText
                 color: Color.popups.text
-                opacity: 0.55
+                opacity: 0.65
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                wrapMode: Text.WordWrap
+              }
+
+              Row {
+                visible: root.statFlicks > 0
+                width: parent.width
+                spacing: Style.space(8)
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtNumber(root.statPeak, 0) + " /s"
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.topSpeed")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.rpm").arg(root.fmtNumber(root.statRpm, 0))
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.5
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtDistance(root.statKm)
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.distance")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtNumber(root.statTurns, 1)
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.turns")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+              }
+
+              Ui.PanelSeparator {
+                visible: root.statFlicks > 0
+                width: parent.width
+              }
+
+              Column {
+                visible: root.statFlicks > 0
+                width: parent.width
+                spacing: Style.space(1)
+
+                StatHeader { text: strings.t("stats.sectionTotals") }
+                StatPair {
+                  label: strings.t("stats.notches")
+                  value: root.fmtNumber(root.statNotches, 0)
+                  label2: strings.t("stats.pages")
+                  value2: root.fmtNumber(root.statNotches / 20, 0)
+                }
+                StatPair {
+                  label: strings.t("stats.ballTime")
+                  value: root.fmtDuration(root.statScrollMs)
+                  label2: strings.t("stats.longestFlick")
+                  value2: root.fmtNumber(root.statLongestFlick, 0) + " "
+                    + strings.t("stats.msUnit")
+                }
+
+                StatHeader { text: strings.t("stats.sectionFlicks") }
+                StatPair {
+                  label: strings.t("stats.flicks")
+                  value: root.fmtNumber(root.statFlicks, 0)
+                  label2: strings.t("stats.coasted")
+                  value2: root.fmtNumber(root.statCoastPct, 0) + " %"
+                }
+                StatPair {
+                  label: strings.t("stats.longestCoast")
+                  value: root.fmtNumber(root.statLongestCoast, 1) + " "
+                    + strings.t("stats.notchesUnit")
+                  label2: strings.t("stats.mostly")
+                  value2: root.statDirection
+                }
+
+                StatHeader { text: strings.t("stats.sectionFun") }
+                CosmicRow {
+                  label: strings.t("stats.earth")
+                  done: root.fmtDistance(root.statKm) + " of "
+                    + root.fmtNumber(40075, 0) + " km"
+                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(40075))
+                }
+                CosmicRow {
+                  label: strings.t("stats.moon")
+                  done: root.fmtDistance(root.statKm) + " of "
+                    + root.fmtNumber(384400, 0) + " km"
+                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(384400))
+                }
+                CosmicRow {
+                  label: strings.t("stats.sun")
+                  done: root.fmtDistance(root.statKm) + " of "
+                    + root.fmtNumber(940000000, 0) + " km"
+                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(940000000))
+                }
+
+                StatHeader { text: strings.t("stats.sectionDays") }
+                StatPair {
+                  label: strings.t("stats.today")
+                  value: root.fmtDistance(root.statTodayKm)
+                  label2: strings.t("stats.activeDays")
+                  value2: root.fmtNumber(root.statActiveDays, 0)
+                }
+                StatRow {
+                  label: strings.t("stats.bestDay")
+                  value: root.statBestLabel + " · " + root.fmtDistance(root.statBestKm)
+                }
+              }
+
+              Text {
+                visible: root.statFlicks > 0
+                width: parent.width
+                text: strings.t("stats.note")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.4
                 font.family: Style.font.family
                 font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
               }
-
-              Text {
-                width: parent.width
-                text: root.fmtNumber(root.statPeak, 0) + " /s"
-                textFormat: Text.PlainText
-                color: Color.popups.text
-                font.family: Style.font.family
-                font.pixelSize: Math.round(Style.font.title * 1.8)
-              }
-
-              Text {
-                width: parent.width
-                text: strings.t("stats.rpm").arg(root.fmtNumber(root.statRpm, 0))
-                textFormat: Text.PlainText
-                color: Color.popups.text
-                opacity: 0.6
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-              }
-            }
-
-            Ui.PanelSeparator {
-              visible: root.statFlicks > 0
-              width: parent.width
-            }
-
-            Column {
-              visible: root.statFlicks > 0
-              width: parent.width
-              spacing: Style.space(2)
-
-              StatHeader { text: strings.t("stats.sectionDistance") }
-              StatRow {
-                label: strings.t("stats.distance")
-                value: root.fmtDistance(root.statKm)
-              }
-              StatRow {
-                label: strings.t("stats.turns")
-                value: root.fmtNumber(root.statTurns, 1)
-              }
-              StatRow {
-                label: strings.t("stats.notches")
-                value: root.fmtNumber(root.statNotches, 0)
-              }
-              StatRow {
-                label: strings.t("stats.pages")
-                value: root.fmtNumber(root.statNotches / 20, 0)
-              }
-
-              StatHeader { text: strings.t("stats.sectionFlicks") }
-              StatRow {
-                label: strings.t("stats.flicks")
-                value: root.fmtNumber(root.statFlicks, 0)
-              }
-              StatRow {
-                label: strings.t("stats.coasted")
-                value: root.fmtNumber(root.statCoastPct, 0) + " %"
-              }
-              StatRow {
-                label: strings.t("stats.ballTime")
-                value: root.fmtDuration(root.statScrollMs)
-              }
-              StatRow {
-                label: strings.t("stats.longestCoast")
-                value: root.fmtNumber(root.statLongestCoast, 1) + " "
-                  + strings.t("stats.notchesUnit")
-              }
-              StatRow {
-                label: strings.t("stats.longestFlick")
-                value: root.fmtNumber(root.statLongestFlick, 0) + " "
-                  + strings.t("stats.msUnit")
-              }
-              StatRow {
-                label: strings.t("stats.mostly")
-                value: root.statDirection
-              }
-
-              StatHeader { text: strings.t("stats.sectionFun") }
-              StatRow {
-                label: strings.t("stats.earth")
-                value: root.statProgress(root.statTurns, root.statTurnsFor(40075))
-              }
-              StatRow {
-                label: strings.t("stats.moon")
-                value: root.statProgress(root.statTurns, root.statTurnsFor(384400))
-              }
-              StatRow {
-                label: strings.t("stats.sun")
-                value: root.statProgress(root.statTurns, root.statTurnsFor(940000000))
-              }
-              StatRow {
-                label: strings.t("stats.paper")
-                value: root.fmtDistance(root.statNotches / 20 * 0.0001 / 1000)
-              }
-              StatRow {
-                label: strings.t("stats.marathon")
-                value: root.fmtNumber(root.statKm / 42.195 * 100, 2) + " %"
-              }
-
-              StatHeader { text: strings.t("stats.sectionDays") }
-              StatRow {
-                label: strings.t("stats.today")
-                value: root.fmtNumber(root.statTodayNotches, 0) + " "
-                  + strings.t("stats.notchesUnit")
-              }
-              StatRow {
-                label: strings.t("stats.bestDay")
-                value: root.statBestLabel + " · " + root.fmtNumber(root.statBestNotches, 0)
-              }
-              StatRow {
-                label: strings.t("stats.activeDays")
-                value: root.fmtNumber(root.statActiveDays, 0)
-              }
-            }
-
-            Text {
-              visible: root.statFlicks > 0
-              width: parent.width
-              text: strings.t("stats.note")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.4
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
             }
           }
 
@@ -1279,6 +1340,120 @@ Ui.Panel {
     font.family: Style.font.family
     font.pixelSize: Style.font.caption
     textFormat: Text.PlainText
+  }
+
+  component CosmicRow: Item {
+    id: cosmic
+
+    property string label: ""
+    property string done: ""
+    property string progress: ""
+
+    width: parent ? parent.width : 0
+    implicitHeight: titleRow.height + doneText.height + Style.space(2)
+
+    Item {
+      id: titleRow
+      width: parent.width
+      height: Math.max(cosmicLabel.implicitHeight, cosmicProgress.implicitHeight)
+
+      Text {
+        id: cosmicLabel
+        anchors.left: parent.left
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width * 0.52
+        text: cosmic.label
+        textFormat: Text.PlainText
+        color: Color.popups.text
+        opacity: 0.75
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        elide: Text.ElideRight
+      }
+
+      Text {
+        id: cosmicProgress
+        anchors.right: parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width * 0.46
+        text: cosmic.progress
+        textFormat: Text.PlainText
+        color: Color.popups.text
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        horizontalAlignment: Text.AlignRight
+        elide: Text.ElideRight
+      }
+    }
+
+    Text {
+      id: doneText
+      anchors.top: titleRow.bottom
+      width: parent.width
+      text: cosmic.done
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.5
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
+    }
+  }
+
+  component MiniStat: Column {
+    id: miniStat
+
+    property string label: ""
+    property string value: ""
+
+    spacing: 0
+
+    Text {
+      width: parent.width
+      text: miniStat.value
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    Text {
+      width: parent.width
+      text: miniStat.label
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.55
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      elide: Text.ElideRight
+    }
+  }
+
+  component StatPair: Row {
+    id: statPair
+
+    property string label: ""
+    property string value: ""
+    property string label2: ""
+    property string value2: ""
+
+    width: parent ? parent.width : 0
+    spacing: Style.space(8)
+
+    MiniStat {
+      id: first
+      width: (statPair.width - statPair.spacing) / 2
+      label: statPair.label
+      value: statPair.value
+    }
+
+    MiniStat {
+      id: second
+      width: (statPair.width - statPair.spacing) / 2
+      label: statPair.label2
+      value: statPair.value2
+    }
   }
 
   component StatRow: Item {

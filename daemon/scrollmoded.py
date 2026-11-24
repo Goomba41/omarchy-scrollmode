@@ -1283,7 +1283,7 @@ class Daemon:
 
     def load_stats(self) -> dict:
         default = {
-            "version": 1,
+            "version": 2,
             "started": "",
             "updated": "",
             "counts": 0.0,
@@ -1313,6 +1313,15 @@ class Daemon:
                 data[key] = value.copy() if isinstance(value, dict) else value
         if not isinstance(data.get("days"), dict):
             data["days"] = {}
+        # Older statistics kept only notches per day. Rebuild counts from the
+        # overall ratio so day distances stay correct after the upgrade.
+        total_notches = float(data.get("notches") or 0.0)
+        ratio = (float(data.get("counts") or 0.0) / total_notches
+                 if total_notches > 0 else 85.0)
+        for day in data["days"].values():
+            if isinstance(day, dict) and not day.get("counts"):
+                day["counts"] = float(day.get("notches") or 0.0) * ratio
+        data["version"] = 2
         return data
 
     def save_stats(self) -> None:
@@ -1364,8 +1373,9 @@ class Daemon:
         days = stats["days"]
         day = days.get(date)
         if not isinstance(day, dict):
-            day = {"notches": 0.0, "flicks": 0, "ms": 0.0}
+            day = {"counts": 0.0, "notches": 0.0, "flicks": 0, "ms": 0.0}
             days[date] = day
+        day["counts"] = float(day.get("counts") or 0.0) + raw
         day["notches"] = float(day.get("notches") or 0.0) + notches
         day["flicks"] = int(day.get("flicks") or 0) + 1
         day["ms"] = float(day.get("ms") or 0.0) + duration

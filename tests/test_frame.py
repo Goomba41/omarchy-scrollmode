@@ -301,6 +301,21 @@ def main():
     assert stats["max_peak_notches"] == 20.0, stats
     assert stats["max_coast_notches"] == 1.6, stats
     assert sum(day["flicks"] for day in stats["days"].values()) == 1, stats
+    day = next(iter(stats["days"].values()))
+    assert day["counts"] == 340.0 and day["notches"] == 4.0, day
+
+    # Older statistics only stored notches per day; loading backfills counts.
+    legacy_path = os.path.join(directory, "legacy.json")
+    with open(legacy_path, "w") as handle:
+        json.dump({
+            "counts": 1700.0,
+            "notches": 20.0,
+            "days": {"2026-01-01": {"notches": 4.0, "flicks": 1, "ms": 10.0}},
+        }, handle)
+    daemon.stats_path = legacy_path
+    legacy = daemon.load_stats()
+    assert legacy["version"] == 2, legacy
+    assert legacy["days"]["2026-01-01"]["counts"] == 340.0, legacy
 
     print("frame path: ok")
     return 0

@@ -31,9 +31,8 @@ settings on a left click.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
-- **Stats tab**: cumulative distance, ball turns, top speed, longest coast and
-  lighthearted comparisons such as how far around the Earth or to the Moon your
-  ball has rolled.
+- **Stats tab**: headline speed, distance and ball turns, longest coast, daily
+  distance, and Earth/Moon/Sun progress shown in percent.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -206,10 +205,13 @@ The panel exposes two controls when it is on:
 the speed the ball had at release, so the hand-off does not jump back to the
 peak after the app has already animated a slower tail.
 
-The **Stats** tab keeps a cumulative, local record: distance the ball rolled,
-ball turns, wheel notches, pages, flicks, top speed, longest coast, the favourite
-direction, and fun comparisons such as how far that is around the Earth, to the
-Moon or around the Sun. It collects automatically and is stored in
+The **Stats** tab opens with three headline numbers: record speed, distance the
+ball rolled and ball turns. Below them are totals, flick records, days, and
+comparisons with a lap around the Earth, a trip to the Moon and an orbit around
+the Sun. Each comparison shows how much of the way the ball has already covered
+and a percentage precise enough to move on a normal day of rolling.
+
+It collects automatically and is stored in
 `/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor
 coordinates).
 

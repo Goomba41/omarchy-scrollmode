@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.3] — 2026-11-24
+
+### Changed
+
+- The Stats tab opens with three side-by-side headline numbers: record speed,
+  ball distance and ball turns. Totals, flick records and days use compact
+  two-column cells, so the whole tab fits without hiding rows.
+- The Earth, Moon and Sun comparisons now read as distance covered against the
+  target plus a percentage precise enough that a normal day of rolling visibly
+  moves it. The paper-stack and marathon rows were dropped.
+- Days show the distance rolled rather than wheel notches.
+- Existing statistics with per-day notches are migrated automatically; day
+  distances are rebuilt from the stored notch counts.
+- The Stats tab scrolls when the screen is too short for the full card.
+
 ## [1.3.2] — 2026-11-23
 
 ### Added
