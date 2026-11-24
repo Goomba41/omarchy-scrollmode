@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.4] — 2026-11-24
+
+### Changed
+
+- Statistics sections now have bold uppercase headers with a divider line and
+  more space between them, so each label stays attached to its number.
+- The comparisons section is a distance ladder that grows from car lengths and
+  football fields through 10K runs and marathons to the Earth, Moon and Sun.
+- Counts use adaptive precision, so a normal day of rolling visibly changes
+  them, including the very large targets.
+- The note under the table explains that counts are multiples and `%` is
+  progress to the target.
+
 ## [1.3.3] — 2026-11-24
 
 ### Changed

@@ -79,7 +79,7 @@
   "tab.feel": "Поведение",
   "tab.device": "Девайс",
   "tab.stats": "Стата",
-  "stats.topSpeed": "Максимальная скорость",
+  "stats.topSpeed": "Рекорд скорости",
   "stats.empty": "Пока нет данных — покрути шар в режиме скролла.",
   "stats.rpm": "≈ %1 об/мин",
   "stats.distance": "Прокатил шар",
@@ -101,12 +101,16 @@
   "stats.today": "Сегодня",
   "stats.bestDay": "Лучший день",
   "stats.activeDays": "Активных дней",
-  "stats.note": "Оценки: шар 34 мм, около 1 600 отсчётов на оборот, ~20 щелчков на страницу.",
+  "stats.note": "Оценки: шар 34 мм, около 1 600 отсчётов на оборот, ~20 щелчков на страницу. Числа — сколько раз; % — прогресс до цели.",
   "stats.up": "Вверх",
   "stats.down": "Вниз",
   "stats.left": "Влево",
   "stats.right": "Вправо",
   "stats.notchesUnit": "щелчков",
   "stats.msUnit": "мс",
-  "stats.sectionTotals": "Всего"
+  "stats.sectionTotals": "Всего",
+  "stats.cars": "Длины машин",
+  "stats.footballFields": "Футбольные поля",
+  "stats.tenKRuns": "Забеги 10 км",
+  "stats.marathons": "Марафоны"
 }

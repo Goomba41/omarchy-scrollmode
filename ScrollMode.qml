@@ -185,6 +185,21 @@ Ui.Panel {
     return text + " %"
   }
 
+  function fmtMultiple(value) {
+    var number = Number(value)
+    if (!isFinite(number)) return "—"
+    if (number >= 100) return fmtNumber(number, 0)
+    var text
+    if (number >= 10) text = number.toFixed(1)
+    else if (number >= 1) text = number.toFixed(2)
+    else if (number >= 0.01) text = number.toFixed(3)
+    else if (number >= 0.0001) text = number.toFixed(5)
+    else if (number >= 0.000001) text = number.toFixed(7)
+    else text = number.toFixed(9)
+    text = text.replace(/0+$/, "").replace(/\.$/, "")
+    return text
+  }
+
   function dayKm(day) {
     var entry = day || {}
     var counts = Number(entry.counts || 0)
@@ -721,7 +736,7 @@ Ui.Panel {
             id: statsFlick
             visible: root.tab === 3
             width: parent.width
-            height: Math.min(statsColumn.implicitHeight, Style.space(500))
+            height: Math.min(statsColumn.implicitHeight, Style.space(700))
             contentWidth: width
             contentHeight: statsColumn.implicitHeight
             clip: true
@@ -732,7 +747,7 @@ Ui.Panel {
             Column {
               id: statsColumn
               width: parent.width
-              spacing: Style.space(8)
+              spacing: Style.space(14)
 
               Text {
                 visible: root.statFlicks === 0
@@ -845,7 +860,7 @@ Ui.Panel {
               Column {
                 visible: root.statFlicks > 0
                 width: parent.width
-                spacing: Style.space(1)
+                spacing: Style.space(6)
 
                 StatHeader { text: strings.t("stats.sectionTotals") }
                 StatPair {
@@ -861,6 +876,12 @@ Ui.Panel {
                   value2: root.fmtNumber(root.statLongestFlick, 0) + " "
                     + strings.t("stats.msUnit")
                 }
+              }
+
+              Column {
+                visible: root.statFlicks > 0
+                width: parent.width
+                spacing: Style.space(6)
 
                 StatHeader { text: strings.t("stats.sectionFlicks") }
                 StatPair {
@@ -876,8 +897,30 @@ Ui.Panel {
                   label2: strings.t("stats.mostly")
                   value2: root.statDirection
                 }
+              }
+
+              Column {
+                visible: root.statFlicks > 0
+                width: parent.width
+                spacing: Style.space(6)
 
                 StatHeader { text: strings.t("stats.sectionFun") }
+                StatRow {
+                  label: strings.t("stats.cars")
+                  value: root.fmtMultiple(root.statKm * 1000 / 4.5)
+                }
+                StatRow {
+                  label: strings.t("stats.footballFields")
+                  value: root.fmtMultiple(root.statKm * 1000 / 105)
+                }
+                StatRow {
+                  label: strings.t("stats.tenKRuns")
+                  value: root.fmtMultiple(root.statKm / 10)
+                }
+                StatRow {
+                  label: strings.t("stats.marathons")
+                  value: root.fmtMultiple(root.statKm / 42.195)
+                }
                 CosmicRow {
                   label: strings.t("stats.earth")
                   done: root.fmtDistance(root.statKm) + " of "
@@ -896,6 +939,12 @@ Ui.Panel {
                     + root.fmtNumber(940000000, 0) + " km"
                   progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(940000000))
                 }
+              }
+
+              Column {
+                visible: root.statFlicks > 0
+                width: parent.width
+                spacing: Style.space(6)
 
                 StatHeader { text: strings.t("stats.sectionDays") }
                 StatPair {
@@ -1333,13 +1382,36 @@ Ui.Panel {
     }
   }
 
-  component StatHeader: Text {
+  component StatHeader: Item {
+    id: headerItem
+
+    property string text: ""
+
     width: parent ? parent.width : 0
-    color: Color.popups.text
-    opacity: 0.5
-    font.family: Style.font.family
-    font.pixelSize: Style.font.caption
-    textFormat: Text.PlainText
+    implicitHeight: headerLabel.implicitHeight
+
+    Text {
+      id: headerLabel
+      text: headerItem.text
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.72
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      font.bold: true
+      font.capitalization: Font.AllUppercase
+      font.letterSpacing: 0.8
+    }
+
+    Rectangle {
+      anchors.left: headerLabel.right
+      anchors.leftMargin: Style.space(8)
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      height: 1
+      color: Color.popups.text
+      opacity: 0.12
+    }
   }
 
   component CosmicRow: Item {
