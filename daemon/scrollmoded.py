@@ -50,8 +50,9 @@ RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode"
 STATE_PATH = os.path.join(RUNTIME_DIR, "state")
 DEVICE_PATH = os.path.join(RUNTIME_DIR, "device")
 STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
-INERTIA_PATH = os.path.join(RUNTIME_DIR, "inertia")
 SOCKET_PATH = os.path.join(RUNTIME_DIR, "control.sock")
+STATE_DIR = os.environ.get("SCROLLMODE_STATE_DIR", "/var/lib/omarchy-scrollmode")
+STATS_PATH = os.path.join(STATE_DIR, "stats.json")
 LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
 
 HIDPP_SW_ID = 0x0A
@@ -119,7 +120,6 @@ DEFAULTS = {
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
-    "stats": False,
 }
 
 
@@ -484,13 +484,18 @@ class ScrollConverter:
         self.gesture_reported = True
         self.report_pending = False
         self.last_peak_notches = 0.0
+        self.release_notches = 0.0
         self.peak_triggered = False
         self.gesture_active = False
         self.gesture_frames = 0
         self.gesture_first = 0.0
         self.gesture_total_x = 0
         self.gesture_total_y = 0
-        self.gesture_samples: list[list[float]] = []
+        self.gesture_raw_counts = 0.0
+        self.gesture_up = 0.0
+        self.gesture_down = 0.0
+        self.gesture_left = 0.0
+        self.gesture_right = 0.0
         self.gesture_peak_counts = 0.0
         self.gesture_peak_dt = 0.0
         self.gesture_tail_speed = 0.0
@@ -562,6 +567,7 @@ class ScrollConverter:
         if dx == 0 and dy == 0:
             return []
 
+        raw_dx, raw_dy = dx, dy
         previous = self.last_motion
         if previous:
             interval = now - previous
@@ -610,7 +616,11 @@ class ScrollConverter:
             self.gesture_first = now
             self.gesture_total_x = 0
             self.gesture_total_y = 0
-            self.gesture_samples = []
+            self.gesture_raw_counts = 0.0
+            self.gesture_up = 0.0
+            self.gesture_down = 0.0
+            self.gesture_left = 0.0
+            self.gesture_right = 0.0
             self.gesture_peak_counts = 0.0
             self.gesture_peak_dt = 0.0
             self.gesture_tail_speed = 0.0
@@ -631,13 +641,19 @@ class ScrollConverter:
         self.gesture_frames += 1
         self.gesture_total_x += abs(dx)
         self.gesture_total_y += abs(dy)
+        self.gesture_raw_counts += math.hypot(raw_dx, raw_dy)
+        if raw_dy > 0:
+            self.gesture_down += raw_dy
+        elif raw_dy < 0:
+            self.gesture_up -= raw_dy
+        if raw_dx > 0:
+            self.gesture_right += raw_dx
+        elif raw_dx < 0:
+            self.gesture_left -= raw_dx
         self.gesture_tail_speed = frame_speed
         if frame_speed >= self.gesture_peak_counts:
             self.gesture_peak_counts = frame_speed
             self.gesture_peak_dt = dt
-        self.gesture_samples.append([round(dt * 1000.0, 2), dx, dy])
-        if len(self.gesture_samples) > 80:
-            del self.gesture_samples[:-80]
 
         vertical = -dy if not self.invert_v else dy
         horizontal = dx if not self.invert_h else -dx
@@ -647,27 +663,34 @@ class ScrollConverter:
         """How long to wait for another frame before starting the coast."""
         return min(0.04, max(0.010, self.frame_interval * 1.5))
 
-    def _coast_at_peak(self) -> None:
-        """Aim the coast at the fastest speed of the gesture, not its tail."""
+    def _coast_at_release(self) -> None:
+        """Continue at the speed the ball had at release, not at its peak.
+
+        The trigger uses the peak, but jumping back to it makes the coast kick
+        after the app has already animated the slower tail.
+        """
+        release = math.hypot(self.vel_x, self.vel_y)
+        if release < 0.001:
+            release = min(self.peak_speed, self.inertia_min_speed)
         if self.axis_lock:
             if self.inertia_axis == "x":
                 sign = 1.0 if (self.vel_x > 0 or (self.vel_x == 0 and self.last_dx >= 0)) else -1.0
-                self.vel_x = sign * self.peak_speed
+                self.vel_x = sign * release
                 self.vel_y = 0.0
             else:
                 sign = 1.0 if (self.vel_y > 0 or (self.vel_y == 0 and self.last_dy >= 0)) else -1.0
-                self.vel_y = sign * self.peak_speed
+                self.vel_y = sign * release
                 self.vel_x = 0.0
             return
 
         current = math.hypot(self.vel_x, self.vel_y)
         if current > 0.001:
-            scale = self.peak_speed / current
+            scale = release / current
             self.vel_x *= scale
             self.vel_y *= scale
         else:
-            self.vel_x = math.copysign(self.peak_speed, self.last_dx or 1)
-            self.vel_y = math.copysign(self.peak_speed, self.last_dy or 1)
+            self.vel_x = math.copysign(release, self.last_dx or 1)
+            self.vel_y = math.copysign(release, self.last_dy or 1)
 
     def inertia_events(self, now: float) -> list[tuple[int, int, int]]:
         """Coast after a flick, decaying to a stop."""
@@ -683,6 +706,7 @@ class ScrollConverter:
                 self.gesture_reported = True
                 self.gesture_active = False
                 self.last_peak_notches = self.peak_speed / self.counts_per_notch
+                self.release_notches = math.hypot(self.vel_x, self.vel_y) / self.counts_per_notch
                 self.peak_triggered = self.peak_speed >= self.inertia_min_speed
                 self.report_pending = True
             if now - self.peak_at > 0.30 or self.peak_speed < self.inertia_min_speed:
@@ -694,9 +718,10 @@ class ScrollConverter:
             # real scroll. One normal frame's worth is enough.
             self.last_tick = max(self.last_motion, now - 0.008)
             self.inertia_axis = self.axis if self.axis_lock else None
-            self._coast_at_peak()
+            self._coast_at_release()
             log(
-                f"inertia {self.peak_speed:.0f} counts/s "
+                f"inertia peak {self.peak_speed:.0f} / release "
+                f"{math.hypot(self.vel_x, self.vel_y):.0f} counts/s "
                 f"after {(now - self.last_motion) * 1000:.0f} ms"
             )
 
@@ -794,11 +819,8 @@ class Daemon:
         self.config_path = config_path
         self.uid = uid
         self.gid = gid
-        try:
-            home = pwd.getpwuid(uid).pw_dir
-        except KeyError:
-            home = os.path.expanduser("~")
-        self.stats_path = os.path.join(home, "scrollmode-flicks.jsonl")
+        self.stats_path = STATS_PATH
+        self.stats = {}
         self.cfg = load_config_or_defaults(config_path)
         self.converter = ScrollConverter()
         self.converter.configure(self.cfg)
@@ -839,6 +861,11 @@ class Daemon:
 
     def prepare_runtime(self) -> None:
         os.makedirs(RUNTIME_DIR, mode=0o755, exist_ok=True)
+        try:
+            os.makedirs(STATE_DIR, mode=0o755, exist_ok=True)
+        except OSError as exc:
+            log(f"cannot create {STATE_DIR}: {exc}")
+        self.stats = self.load_stats()
         self.lock_handle = open(LOCK_PATH, "w", encoding="utf-8")
         try:
             fcntl.flock(self.lock_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -847,11 +874,6 @@ class Daemon:
 
         if os.path.exists(SOCKET_PATH):
             os.unlink(SOCKET_PATH)
-        try:
-            if os.path.exists(INERTIA_PATH):
-                os.unlink(INERTIA_PATH)
-        except OSError:
-            pass
 
         server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         server.bind(SOCKET_PATH)
@@ -1259,58 +1281,99 @@ class Daemon:
             self.last_click_exit = now
             self.deactivate()
 
-    def write_stats(self) -> None:
-        if not self.cfg.get("stats", False):
-            return
-        conv = self.converter
-        now = time.monotonic()
-        data = {
-            "kind": "flick",
-            "ts": datetime.now().astimezone().isoformat(timespec="milliseconds"),
-            "mode": self.mode,
-            "device": self.device_name or (self.dev.name if self.dev is not None else ""),
-            "activeId": self.active_id,
-            "peak_counts": round(conv.peak_speed, 1),
-            "peak_notches": round(conv.last_peak_notches, 2),
-            "tail_counts": round(conv.gesture_tail_speed, 1),
-            "tail_notches": round(conv.gesture_tail_speed / conv.counts_per_notch, 2),
-            "trigger_notches": round(conv.inertia_trigger, 2),
-            "coasted": bool(conv.peak_triggered),
-            "frames": conv.gesture_frames,
-            "duration_ms": round((conv.last_motion - conv.gesture_first) * 1000.0, 1),
-            "counts_x": conv.gesture_total_x,
-            "counts_y": conv.gesture_total_y,
-            "axis": conv.axis or "both",
-            "frame_ms": round(conv.frame_interval * 1000.0, 2),
-            "guard_ms": round(conv.guard_seconds() * 1000.0, 2),
-            "peak_age_ms": round((now - conv.peak_at) * 1000.0, 1),
-            "peak_frame_ms": round(conv.gesture_peak_dt * 1000.0, 2),
-            "speed": conv.speed,
-            "strength": conv.inertia_strength,
-            "counts_per_notch": conv.counts_per_notch,
-            "samples": conv.gesture_samples,
+    def load_stats(self) -> dict:
+        default = {
+            "version": 1,
+            "started": "",
+            "updated": "",
+            "counts": 0.0,
+            "notches": 0.0,
+            "flicks": 0,
+            "coasted": 0,
+            "scroll_ms": 0.0,
+            "up": 0.0,
+            "down": 0.0,
+            "left": 0.0,
+            "right": 0.0,
+            "max_peak_notches": 0.0,
+            "max_peak_counts": 0.0,
+            "max_flick_ms": 0.0,
+            "max_coast_notches": 0.0,
+            "days": {},
         }
         try:
-            with open(self.stats_path, "a", encoding="utf-8") as handle:
-                handle.write(json.dumps(data, ensure_ascii=False) + "\n")
+            with open(self.stats_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        for key, value in default.items():
+            if key not in data:
+                data[key] = value.copy() if isinstance(value, dict) else value
+        if not isinstance(data.get("days"), dict):
+            data["days"] = {}
+        return data
+
+    def save_stats(self) -> None:
+        try:
+            os.makedirs(os.path.dirname(self.stats_path), mode=0o755, exist_ok=True)
+            tmp = self.stats_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(self.stats, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            os.replace(tmp, self.stats_path)
             os.chmod(self.stats_path, 0o644)
-            os.chown(self.stats_path, self.uid, self.gid)
         except OSError as exc:
             log(f"cannot write {self.stats_path}: {exc}")
 
-    def write_inertia(self) -> None:
-        data = {
-            "peak": round(self.converter.last_peak_notches, 1),
-            "coasted": bool(self.converter.peak_triggered),
-        }
-        try:
-            with open(INERTIA_PATH, "w", encoding="utf-8") as handle:
-                json.dump(data, handle)
-                handle.write("\n")
-            os.chmod(INERTIA_PATH, 0o644)
-            os.chown(INERTIA_PATH, self.uid, self.gid)
-        except OSError as exc:
-            log(f"cannot write {INERTIA_PATH}: {exc}")
+    def update_stats(self) -> None:
+        conv = self.converter
+        now = datetime.now().astimezone()
+        date = now.date().isoformat()
+        raw = conv.gesture_raw_counts
+        notches = raw / max(1.0, conv.counts_per_notch)
+        duration = max(0.0, (conv.last_motion - conv.gesture_first) * 1000.0)
+
+        stats = self.stats
+        stats["counts"] = float(stats.get("counts") or 0.0) + raw
+        stats["notches"] = float(stats.get("notches") or 0.0) + notches
+        stats["flicks"] = int(stats.get("flicks") or 0) + 1
+        stats["scroll_ms"] = float(stats.get("scroll_ms") or 0.0) + duration
+        stats["up"] = float(stats.get("up") or 0.0) + conv.gesture_up
+        stats["down"] = float(stats.get("down") or 0.0) + conv.gesture_down
+        stats["left"] = float(stats.get("left") or 0.0) + conv.gesture_left
+        stats["right"] = float(stats.get("right") or 0.0) + conv.gesture_right
+        stats["max_peak_notches"] = max(
+            float(stats.get("max_peak_notches") or 0.0), conv.last_peak_notches
+        )
+        stats["max_peak_counts"] = max(
+            float(stats.get("max_peak_counts") or 0.0), conv.peak_speed
+        )
+        stats["max_flick_ms"] = max(
+            float(stats.get("max_flick_ms") or 0.0), duration
+        )
+
+        if conv.peak_triggered:
+            stats["coasted"] = int(stats.get("coasted") or 0) + 1
+            coast = conv.release_notches / max(0.1, conv.inertia_decay)
+            stats["max_coast_notches"] = max(
+                float(stats.get("max_coast_notches") or 0.0), coast
+            )
+
+        days = stats["days"]
+        day = days.get(date)
+        if not isinstance(day, dict):
+            day = {"notches": 0.0, "flicks": 0, "ms": 0.0}
+            days[date] = day
+        day["notches"] = float(day.get("notches") or 0.0) + notches
+        day["flicks"] = int(day.get("flicks") or 0) + 1
+        day["ms"] = float(day.get("ms") or 0.0) + duration
+
+        if not stats.get("started"):
+            stats["started"] = now.isoformat()
+        stats["updated"] = now.isoformat()
+        self.save_stats()
 
     def flush_inertia(self) -> None:
         """Emit the coasting events after a flick, on a timer of its own."""
@@ -1319,8 +1382,7 @@ class Daemon:
         events = self.converter.inertia_events(time.monotonic())
         if self.converter.report_pending:
             self.converter.report_pending = False
-            self.write_inertia()
-            self.write_stats()
+            self.update_stats()
         if not events:
             return
         try:
@@ -1890,7 +1952,7 @@ def selftest() -> int:
     assert converter.last_peak_notches > 12, converter.last_peak_notches
     assert converter.gesture_frames == 1, converter.gesture_frames
     assert converter.gesture_peak_counts > 1200, converter.gesture_peak_counts
-    assert len(converter.gesture_samples) == 1, converter.gesture_samples
+    assert converter.gesture_raw_counts == 20, converter.gesture_raw_counts
 
     print("selftest: ok")
     return 0

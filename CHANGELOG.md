@@ -13,16 +13,16 @@ All notable changes to this project are documented here. The format follows
 - Sniper trigger learning: choose a spare mouse button in the panel (or run
   `omarchy-scrollmode learn`) and press it once. The button is stored as
   `sniper_button`; the option is hidden when the device reports no spare button.
-- The settings panel is split into **Scroll**, **Feel** and **Device** tabs, so
-  the full list fits without filling the screen. The device picker stays above
-  the tabs.
+- The settings panel is split into **Scroll**, **Feel**, **Device** and
+  **Stats** tabs, so the full list fits without filling the screen. The device
+  picker stays above the tabs.
 - The sniper button control shows the current button and flashes a green
   **✓ Done** after a successful pick.
-- The Trigger line shows the speed of your last flick, in notches per second,
-  so the threshold can be matched to the hand.
-- Optional flick statistics: one JSON line per gesture in
-  `~/scrollmode-flicks.jsonl` with peak/tail speed, timing, settings and raw
-  frames, for tuning the trigger and coast. Off by default; no coordinates.
+- The **Stats** tab: cumulative distance the ball rolled, ball turns, wheel
+  notches, pages, flicks, top speed, longest coast, favourite direction and fun
+  comparisons (around the Earth, to the Moon, around the Sun). The data lives in
+  `/var/lib/omarchy-scrollmode/stats.json`; no home file and no cursor
+  coordinates.
 
 ### Changed
 
@@ -35,15 +35,19 @@ All notable changes to this project are documented here. The format follows
 - Setting titles are shorter now that the tooltips explain them.
 - A rejected learn warning disappears after eight seconds instead of staying in
   the panel.
+- The Trigger readout and the statistics toggle were removed; statistics are
+  always collected into the system state directory instead of a JSONL file in
+  the home directory.
 
 ### Fixed
 
 - Inertia starts after about one and a half device frame intervals (roughly
   12 ms at 125 Hz, clamped to 10–40 ms) instead of a fixed 40 ms. The trigger
-  and the coast use the raw frame peak over 300 ms instead of the smoothed
-  velocity: a short, sharp flick is no longer diluted to 35–58 % of its real
-  speed and no longer falls below the threshold. The coast ticks at 125 Hz
-  instead of 60 Hz, which keeps the smooth scrolling animation alive.
+  uses the raw frame peak over 300 ms instead of the smoothed velocity: a short,
+  sharp flick is no longer diluted to 35–58 % of its real speed. The coast
+  starts from the release velocity, not the peak, so it no longer kicks back to
+  a speed the ball already lost. The coast ticks at 125 Hz instead of 60 Hz,
+  which keeps the smooth scrolling animation alive.
 - A small movement during a coast clears the stale velocity and peak, so it
   cannot start a second coast from the same flick. This removes the occasional
   double kick. The first coast frame is capped to one normal 8 ms frame so the

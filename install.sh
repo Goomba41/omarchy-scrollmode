@@ -50,6 +50,8 @@ RestartSec=2
 RuntimeDirectory=omarchy-scrollmode
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
+StateDirectory=omarchy-scrollmode
+StateDirectoryMode=0755
 
 [Install]
 WantedBy=multi-user.target

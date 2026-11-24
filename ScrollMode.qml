@@ -57,17 +57,6 @@ Ui.Panel {
   readonly property bool present: !!(status && status.present === true)
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
-  readonly property var inertiaInfo: {
-    var text = inertiaFile.text() || ""
-    if (!text) return ({})
-    try {
-      return JSON.parse(text)
-    } catch (error) {
-      return ({})
-    }
-  }
-  readonly property real lastPeak: Number(inertiaInfo.peak || 0)
-  readonly property bool lastCoasted: inertiaInfo.coasted === true
   readonly property bool sniperAvailable: !!(status && status.sniperAvailable === true)
   readonly property int sniperCode: (status && Number(status.sniperCode)) ? Number(status.sniperCode) : 0
   readonly property bool learning: !!(status && status.learning === true)
@@ -83,6 +72,113 @@ Ui.Panel {
     if (root.learnError === "reserved") return strings.t("menu.sniperReserved")
     if (root.learnError === "timeout") return strings.t("menu.sniperTimeout")
     return ""
+  }
+
+  // Historical statistics are aggregated by the daemon in the system state
+  // directory; the panel only reads the result.
+  readonly property real countsPerTurn: 1600
+  readonly property real ballCircumference: 0.1068  // metres, ~34 mm ball
+
+  readonly property var statsInfo: {
+    var text = statsFile.text() || ""
+    if (!text) return ({})
+    try {
+      return JSON.parse(text)
+    } catch (error) {
+      return ({})
+    }
+  }
+  readonly property real statCounts: Number(statsInfo.counts || 0)
+  readonly property real statNotches: Number(statsInfo.notches || 0)
+  readonly property int statFlicks: Number(statsInfo.flicks || 0)
+  readonly property int statCoasted: Number(statsInfo.coasted || 0)
+  readonly property real statScrollMs: Number(statsInfo.scroll_ms || 0)
+  readonly property real statPeak: Number(statsInfo.max_peak_notches || 0)
+  readonly property real statPeakCounts: Number(statsInfo.max_peak_counts || 0)
+  readonly property real statLongestCoast: Number(statsInfo.max_coast_notches || 0)
+  readonly property real statLongestFlick: Number(statsInfo.max_flick_ms || 0)
+  readonly property var statDays: (statsInfo && statsInfo.days) ? statsInfo.days : ({})
+  readonly property string statTodayKey: Qt.formatDate(new Date(), "yyyy-MM-dd")
+  readonly property var statToday: statDays[root.statTodayKey] || ({})
+  readonly property real statTodayNotches: Number(statToday.notches || 0)
+  readonly property int statActiveDays: Object.keys(statDays).length
+  readonly property string statBestKey: {
+    var best = ""
+    var bestValue = -1
+    for (var key in statDays) {
+      var value = Number((statDays[key] || {}).notches || 0)
+      if (value > bestValue) {
+        bestValue = value
+        best = key
+      }
+    }
+    return best
+  }
+  readonly property real statBestNotches: root.statBestKey !== ""
+    ? Number((statDays[root.statBestKey] || {}).notches || 0) : 0
+  readonly property string statBestLabel: {
+    if (root.statBestKey === "") return "—"
+    var date = new Date(root.statBestKey + "T12:00:00")
+    return Qt.formatDate(date, "d MMM yyyy")
+  }
+  readonly property string statDirection: {
+    var up = Number(statsInfo.up || 0)
+    var down = Number(statsInfo.down || 0)
+    var left = Number(statsInfo.left || 0)
+    var right = Number(statsInfo.right || 0)
+    var top = Math.max(up, down, left, right)
+    if (top <= 0) return "—"
+    if (up === top) return strings.t("stats.up")
+    if (down === top) return strings.t("stats.down")
+    if (left === top) return strings.t("stats.left")
+    return strings.t("stats.right")
+  }
+  readonly property real statTurns: statCounts / countsPerTurn
+  readonly property real statKm: statTurns * ballCircumference / 1000
+  readonly property real statRpm: statPeakCounts / countsPerTurn * 60
+  readonly property real statCoastPct: statFlicks > 0 ? 100 * statCoasted / statFlicks : 0
+
+  function fmtNumber(value, digits) {
+    var number = Number(value)
+    if (!isFinite(number)) return "—"
+    var text = number.toFixed(digits === undefined ? 0 : digits)
+    var parts = text.split(".")
+    parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ")
+    return parts.join(".")
+  }
+
+  function fmtDistance(km) {
+    var value = Number(km)
+    if (!isFinite(value)) return "—"
+    if (value >= 1) return fmtNumber(value, 2) + " km"
+    var metres = value * 1000
+    if (metres >= 1) return fmtNumber(metres, 1) + " m"
+    return fmtNumber(metres * 100, 1) + " cm"
+  }
+
+  function fmtDuration(ms) {
+    var seconds = Math.max(0, Number(ms)) / 1000
+    if (seconds < 60) return fmtNumber(seconds, 1) + " s"
+    var minutes = Math.floor(seconds / 60)
+    var rest = Math.round(seconds % 60)
+    if (rest === 60) { minutes += 1; rest = 0 }
+    if (minutes < 60) return minutes + " m " + rest + " s"
+    var hours = Math.floor(minutes / 60)
+    minutes = minutes % 60
+    return hours + " h " + minutes + " m"
+  }
+
+  function statTurnsFor(km) {
+    return Number(km) * 1000 / root.ballCircumference
+  }
+
+  function statProgress(turns, target) {
+    var value = Number(turns)
+    var goal = Number(target)
+    if (!(value > 0) || !(goal > 0)) return "—"
+    var ratio = value / goal
+    if (ratio >= 0.01) return fmtNumber(ratio * 100, ratio >= 0.1 ? 1 : 2) + " %"
+    return strings.t("stats.oneIn").arg(fmtNumber(1 / ratio, 0))
   }
 
   readonly property var deviceOptions: {
@@ -248,8 +344,8 @@ Ui.Panel {
   }
 
   FileView {
-    id: inertiaFile
-    path: "/run/omarchy-scrollmode/inertia"
+    id: statsFile
+    path: "/var/lib/omarchy-scrollmode/stats.json"
     watchChanges: true
     printErrors: false
     blockLoading: true
@@ -268,7 +364,7 @@ Ui.Panel {
       stateFile.reload()
       statusFile.reload()
       configFile.reload()
-      inertiaFile.reload()
+      statsFile.reload()
     }
   }
 
@@ -590,13 +686,14 @@ Ui.Panel {
               model: [
                 strings.t("tab.scroll"),
                 strings.t("tab.feel"),
-                strings.t("tab.device")
+                strings.t("tab.device"),
+                strings.t("tab.stats")
               ]
 
               delegate: Ui.Button {
                 required property var modelData
                 required property int index
-                width: (parent.width - 2 * parent.spacing) / 3
+                width: (parent.width - 3 * parent.spacing) / 4
                 height: Style.spacing.controlHeight
                 text: modelData
                 bordered: true
@@ -604,6 +701,165 @@ Ui.Panel {
                 foreground: Color.popups.text
                 onClicked: root.tab = index
               }
+            }
+          }
+
+          Column {
+            visible: root.tab === 3
+            width: parent.width
+            spacing: Style.space(8)
+
+            Text {
+              visible: root.statFlicks === 0
+              width: parent.width
+              text: strings.t("stats.empty")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.65
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
+            }
+
+            Column {
+              visible: root.statFlicks > 0
+              width: parent.width
+              spacing: Style.space(2)
+
+              Text {
+                width: parent.width
+                text: strings.t("stats.topSpeed")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.55
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+
+              Text {
+                width: parent.width
+                text: root.fmtNumber(root.statPeak, 0) + " /s"
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Math.round(Style.font.title * 1.8)
+              }
+
+              Text {
+                width: parent.width
+                text: strings.t("stats.rpm").arg(root.fmtNumber(root.statRpm, 0))
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.6
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+              }
+            }
+
+            Ui.PanelSeparator {
+              visible: root.statFlicks > 0
+              width: parent.width
+            }
+
+            Column {
+              visible: root.statFlicks > 0
+              width: parent.width
+              spacing: Style.space(2)
+
+              StatHeader { text: strings.t("stats.sectionDistance") }
+              StatRow {
+                label: strings.t("stats.distance")
+                value: root.fmtDistance(root.statKm)
+              }
+              StatRow {
+                label: strings.t("stats.turns")
+                value: root.fmtNumber(root.statTurns, 1)
+              }
+              StatRow {
+                label: strings.t("stats.notches")
+                value: root.fmtNumber(root.statNotches, 0)
+              }
+              StatRow {
+                label: strings.t("stats.pages")
+                value: root.fmtNumber(root.statNotches / 20, 0)
+              }
+
+              StatHeader { text: strings.t("stats.sectionFlicks") }
+              StatRow {
+                label: strings.t("stats.flicks")
+                value: root.fmtNumber(root.statFlicks, 0)
+              }
+              StatRow {
+                label: strings.t("stats.coasted")
+                value: root.fmtNumber(root.statCoastPct, 0) + " %"
+              }
+              StatRow {
+                label: strings.t("stats.ballTime")
+                value: root.fmtDuration(root.statScrollMs)
+              }
+              StatRow {
+                label: strings.t("stats.longestCoast")
+                value: root.fmtNumber(root.statLongestCoast, 1) + " "
+                  + strings.t("stats.notchesUnit")
+              }
+              StatRow {
+                label: strings.t("stats.longestFlick")
+                value: root.fmtNumber(root.statLongestFlick, 0) + " "
+                  + strings.t("stats.msUnit")
+              }
+              StatRow {
+                label: strings.t("stats.mostly")
+                value: root.statDirection
+              }
+
+              StatHeader { text: strings.t("stats.sectionFun") }
+              StatRow {
+                label: strings.t("stats.earth")
+                value: root.statProgress(root.statTurns, root.statTurnsFor(40075))
+              }
+              StatRow {
+                label: strings.t("stats.moon")
+                value: root.statProgress(root.statTurns, root.statTurnsFor(384400))
+              }
+              StatRow {
+                label: strings.t("stats.sun")
+                value: root.statProgress(root.statTurns, root.statTurnsFor(940000000))
+              }
+              StatRow {
+                label: strings.t("stats.paper")
+                value: root.fmtDistance(root.statNotches / 20 * 0.0001 / 1000)
+              }
+              StatRow {
+                label: strings.t("stats.marathon")
+                value: root.fmtNumber(root.statKm / 42.195 * 100, 2) + " %"
+              }
+
+              StatHeader { text: strings.t("stats.sectionDays") }
+              StatRow {
+                label: strings.t("stats.today")
+                value: root.fmtNumber(root.statTodayNotches, 0) + " "
+                  + strings.t("stats.notchesUnit")
+              }
+              StatRow {
+                label: strings.t("stats.bestDay")
+                value: root.statBestLabel + " · " + root.fmtNumber(root.statBestNotches, 0)
+              }
+              StatRow {
+                label: strings.t("stats.activeDays")
+                value: root.fmtNumber(root.statActiveDays, 0)
+              }
+            }
+
+            Text {
+              visible: root.statFlicks > 0
+              width: parent.width
+              text: strings.t("stats.note")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.4
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
 
@@ -702,10 +958,6 @@ Ui.Panel {
             label: strings.t("menu.inertiaTrigger")
             help: strings.t("help.inertiaTrigger")
             valueText: strings.t("menu.perSecond").arg(Math.round(sliderValue))
-            hint: root.lastPeak > 0
-              ? strings.t("menu.inertiaLast").arg(root.lastPeak.toFixed(1))
-                + (root.lastCoasted ? "  \u00b7  " + strings.t("menu.inertiaCoasted") : "")
-              : ""
             from: 4
             to: 30
             step: 1
@@ -879,14 +1131,6 @@ Ui.Panel {
             }
           }
 
-          ToggleRow {
-            visible: root.tab === 1
-            label: strings.t("menu.stats")
-            help: strings.t("help.stats")
-            checked: root.bool("stats")
-            onClicked: root.setValue("stats", !root.bool("stats"))
-          }
-
           Ui.PanelSeparator {
             visible: root.tab === 2
             width: parent.width
@@ -1025,6 +1269,54 @@ Ui.Panel {
       text: hint.text
       width: Style.space(240)
       delay: 250
+    }
+  }
+
+  component StatHeader: Text {
+    width: parent ? parent.width : 0
+    color: Color.popups.text
+    opacity: 0.5
+    font.family: Style.font.family
+    font.pixelSize: Style.font.caption
+    textFormat: Text.PlainText
+  }
+
+  component StatRow: Item {
+    id: statRow
+
+    property string label: ""
+    property string value: ""
+
+    width: parent ? parent.width : 0
+    implicitHeight: Math.max(statLabel.implicitHeight, statValue.implicitHeight)
+      + Style.space(3)
+
+    Text {
+      id: statLabel
+      anchors.left: parent.left
+      anchors.verticalCenter: parent.verticalCenter
+      width: parent.width * 0.44
+      text: statRow.label
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.7
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+      elide: Text.ElideRight
+    }
+
+    Text {
+      id: statValue
+      anchors.right: parent.right
+      anchors.verticalCenter: parent.verticalCenter
+      width: parent.width * 0.54
+      text: statRow.value
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      font.family: Style.font.family
+      font.pixelSize: Style.font.body
+      horizontalAlignment: Text.AlignRight
+      elide: Text.ElideRight
     }
   }
 

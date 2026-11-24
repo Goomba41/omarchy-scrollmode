@@ -26,6 +26,5 @@
   "exit_on_click": true,
   "auto_exit_seconds": 0,
   "hold_max_seconds": 60,
-  "sniper_button": 0,
-  "stats": false
+  "sniper_button": 0
 }

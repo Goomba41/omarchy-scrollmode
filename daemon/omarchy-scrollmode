@@ -75,7 +75,6 @@ DEFAULT_CONFIG = {
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
-    "stats": False,
 }
 
 # path -> (kind, min, max)
@@ -93,7 +92,6 @@ SETTINGS = {
     "scroll.inertia_strength": ("number", 50, 200),
     "sniper_button": ("number", 0, 767),
     "exit_on_click": ("bool",),
-    "stats": ("bool",),
     "auto_exit_seconds": ("number", 0, 3600),
     "hold_threshold_ms": ("number", 100, 1000),
     "hold_max_seconds": ("number", 0, 3600),

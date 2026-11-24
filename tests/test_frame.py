@@ -272,47 +272,35 @@ def main():
     print("inertia restart after cancel:", restarted, "events (expect 0)")
     assert restarted == 0, restarted
 
-    # The panel's "last flick" readout is a small JSON file.
+    # Aggregate statistics written for the Stats tab.
     import json
     import tempfile
-    directory = tempfile.mkdtemp(prefix="scrollmode-inertia-")
-    path = os.path.join(directory, "inertia")
-    original_path = scrollmoded.INERTIA_PATH
-    try:
-        scrollmoded.INERTIA_PATH = path
-        daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
-        daemon.converter.last_peak_notches = 17.4
-        daemon.converter.peak_triggered = True
-        daemon.write_inertia()
-        with open(path) as handle:
-            readout = json.load(handle)
-        print("inertia readout:", readout)
-        assert readout == {"peak": 17.4, "coasted": True}, readout
-
-        stats_path = os.path.join(directory, "flicks.jsonl")
-        daemon.stats_path = stats_path
-        daemon.cfg["stats"] = True
-        converter = daemon.converter
-        converter.peak_speed = 2500.0
-        converter.last_peak_notches = 25.0
-        converter.peak_triggered = True
-        converter.gesture_frames = 3
-        converter.gesture_first = 100.0
-        converter.last_motion = 100.05
-        converter.gesture_total_x = 40
-        converter.gesture_total_y = 0
-        converter.gesture_samples = [[8, 20, 0], [8, 20, 0], [8, 0, 1]]
-        daemon.write_stats()
-        with open(stats_path) as handle:
-            stats = json.loads(handle.readline())
-        print("flick stats:", {k: stats[k] for k in ("kind", "peak_counts", "coasted", "frames")})
-        assert stats["kind"] == "flick"
-        assert stats["peak_counts"] == 2500.0
-        assert stats["coasted"] is True
-        assert stats["frames"] == 3
-        assert len(stats["samples"]) == 3
-    finally:
-        scrollmoded.INERTIA_PATH = original_path
+    directory = tempfile.mkdtemp(prefix="scrollmode-stats-")
+    daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
+    daemon.stats_path = os.path.join(directory, "stats.json")
+    daemon.stats = daemon.load_stats()
+    converter = daemon.converter
+    converter.counts_per_notch = 85.0
+    converter.inertia_decay = 5.0
+    converter.gesture_raw_counts = 340.0
+    converter.gesture_first = 100.0
+    converter.last_motion = 100.1
+    converter.gesture_down = 340.0
+    converter.gesture_frames = 3
+    converter.last_peak_notches = 20.0
+    converter.peak_speed = 1700.0
+    converter.peak_triggered = True
+    converter.release_notches = 8.0
+    daemon.update_stats()
+    with open(daemon.stats_path) as handle:
+        stats = json.load(handle)
+    print("flick stats:", {k: stats[k] for k in ("counts", "notches", "flicks", "max_peak_notches")})
+    assert stats["counts"] == 340.0, stats
+    assert stats["notches"] == 4.0, stats
+    assert stats["flicks"] == 1 and stats["coasted"] == 1, stats
+    assert stats["max_peak_notches"] == 20.0, stats
+    assert stats["max_coast_notches"] == 1.6, stats
+    assert sum(day["flicks"] for day in stats["days"].values()) == 1, stats
 
     print("frame path: ok")
     return 0

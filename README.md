@@ -31,6 +31,9 @@ settings on a left click.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
+- **Stats tab**: cumulative distance, ball turns, top speed, longest coast and
+  lighthearted comparisons such as how far around the Earth or to the Moon your
+  ball has rolled.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -164,8 +167,8 @@ When no pointing device is available (or the service is stopped), the ball and
 the header badge turn gray and the badge reads **No device** with a broken-link
 icon.
 
-The settings are grouped into **Scroll**, **Feel** and **Device** tabs; the
-device picker stays above them. A circled question mark next to a setting opens
+The settings are grouped into **Scroll**, **Feel**, **Device** and **Stats**
+tabs; the device picker stays above them. A circled question mark next to a setting opens
 a short tooltip explaining what it changes. Every control writes
 `~/.config/omarchy/scrollmode.json` through `omarchy-scrollmode set` and the
 daemon reloads immediately. Sliders snap to
@@ -199,15 +202,16 @@ The panel exposes two controls when it is on:
 - **Coast** — how far it keeps going, in percent (default 100). Higher is
   longer.
 
-The line under Trigger shows the speed of your last flick, for example
-`Last flick: 17.4 /s · coast`, so you can compare it with the trigger and tune
-it to your hand.
+**Trigger** gates on the fastest moment of the flick, but the coast starts from
+the speed the ball had at release, so the hand-off does not jump back to the
+peak after the app has already animated a slower tail.
 
-For longer tuning there is **Flick statistics** (off by default): turn it on in
-the Feel tab or with `omarchy-scrollmode set stats true`. Every gesture then
-appends one JSON line to `~/scrollmode-flicks.jsonl` with its peak and tail
-speed, frame timing, the trigger/coast settings and up to 80 raw frames. The
-file is local only and contains no cursor coordinates.
+The **Stats** tab keeps a cumulative, local record: distance the ball rolled,
+ball turns, wheel notches, pages, flicks, top speed, longest coast, the favourite
+direction, and fun comparisons such as how far that is around the Earth, to the
+Moon or around the Sun. It collects automatically and is stored in
+`/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor
+coordinates).
 
 ### Choosing the device
 
@@ -269,7 +273,6 @@ button, and the bar icon is dimmed:
   },
 
   "sniper_button": 0,           // spare mouse button code; learn it in the panel
-  "stats": false,               // append flick stats to ~/scrollmode-flicks.jsonl
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
   "hold_max_seconds": 60        // safety cap for a stuck momentary hold
@@ -384,6 +387,8 @@ released when the process exits.
 /run/omarchy-scrollmode/status.json  devices, active id, hidden count
 /run/omarchy-scrollmode/device       display name of the active device
 /run/omarchy-scrollmode/control.sock CLI control socket (0600, user-owned)
+
+/var/lib/omarchy-scrollmode/stats.json  cumulative statistics for the Stats tab
 ```
 
 ## Development
@@ -418,7 +423,10 @@ part of the local checks rather than CI.
 ```
 
 Removes the service, binaries, widget and the managed hotkey block. The config
-in `~/.config/omarchy/scrollmode.json` is kept.
+in `~/.config/omarchy/scrollmode.json` and the statistics in
+`/var/lib/omarchy-scrollmode/stats.json` are kept; remove the statistics
+directory with `sudo rm -rf /var/lib/omarchy-scrollmode` if you want a clean
+slate.
 
 ## Limitations
 
