@@ -78,8 +78,8 @@
   "tab.feel": "Feel",
   "tab.device": "Device",
   "tab.stats": "Stats",
-  "stats.topSpeed": "Top scroll speed",
-  "stats.empty": "No data yet — use the trackball in scroll mode.",
+  "stats.topSpeed": "Top speed",
+  "stats.empty": "No data yet — move the trackball.",
   "stats.rpm": "≈ %1 rpm",
   "stats.distance": "Ball rolled",
   "stats.turns": "Ball turns",
@@ -137,5 +137,15 @@
   "device.kind.mouse": "Mouse",
   "device.kind.trackpad": "Trackpad",
   "device.kind.tablet": "Tablet",
-  "device.kind.unknown": "Pointer"
+  "device.kind.unknown": "Pointer",
+  "stats.topPointerSpeed": "Top speed",
+  "stats.wheelNotches": "Wheel notches",
+  "stats.clicks": "Clicks",
+  "stats.activeTime": "Active time",
+  "stats.movement": "Movement",
+  "stats.countsUnit": "counts",
+  "stats.mouseEmpty": "No mouse data yet — move the mouse or scroll the wheel.",
+  "stats.mouseNoDpi": "Distance comparisons need the mouse DPI. Wheel and click stats are already collected.",
+  "stats.mouseNote": "Wheel notches are physical wheel events; movement uses the reported DPI when available.",
+  "device.limited": "This pointer type is recognised. More settings for it will arrive in a later update."
 }

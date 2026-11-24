@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] — 2026-11-24
+
+### Added
+
+- Applicability matrix: the panel builds its tabs from the active device's
+  `supportsScroll`, `supportsStats` and `supportsButtons` flags. A mouse gets
+  Device and Stats only; trackpad/tablet/unknown get Device only; trackball
+  keeps the full panel. The daemon refuses scroll/sniper for non-trackball
+  pointers.
+- Mouse statistics: physical wheel notches, pages, clicks, movement, active
+  time, top speed, direction and days. Movement is collected passively in
+  pointer mode without grabbing the device. Distance comparisons appear when
+  the mouse reports DPI; otherwise movement stays in raw counts with a note.
+- Trackball statistics now count ball movement in pointer mode as well as
+  scroll/sniper. Flicks and coast remain scroll-only.
+- The stats file is now v3 with separate `trackball` and `mouse` sections;
+  older flat stats migrate into the trackball section.
+- Battery UI is gated by the active device being wireless, not just by the
+  presence of a battery report somewhere in the daemon.
+
 ## [1.5.0] — 2026-11-24
 
 ### Added

@@ -78,8 +78,8 @@
   "tab.feel": "Поведение",
   "tab.device": "Девайс",
   "tab.stats": "Стата",
-  "stats.topSpeed": "Рекорд скорости",
-  "stats.empty": "Пока нет данных — покрути шар в режиме скролла.",
+  "stats.topSpeed": "Макс. скорость",
+  "stats.empty": "Пока нет данных — подвигай трекбол.",
   "stats.rpm": "≈ %1 об/мин",
   "stats.distance": "Прокатил шар",
   "stats.turns": "Оборотов шара",
@@ -137,5 +137,15 @@
   "device.kind.mouse": "Мышь",
   "device.kind.trackpad": "Тачпад",
   "device.kind.tablet": "Планшет",
-  "device.kind.unknown": "Указатель"
+  "device.kind.unknown": "Указатель",
+  "stats.topPointerSpeed": "Макс. скорость",
+  "stats.wheelNotches": "Щелчки колеса",
+  "stats.clicks": "Клики",
+  "stats.activeTime": "Активное время",
+  "stats.movement": "Движение",
+  "stats.countsUnit": "отсчётов",
+  "stats.mouseEmpty": "Пока нет данных — подвигай мышь или покрути колесо.",
+  "stats.mouseNoDpi": "Для сравнений расстояний нужен DPI мыши. Щелчки колеса и клики уже собираются.",
+  "stats.mouseNote": "Щелчки колеса — это физические события колеса; движение переводится в метры, когда известен DPI.",
+  "device.limited": "Этот тип указателя распознан. Остальные настройки для него появятся позже."
 }

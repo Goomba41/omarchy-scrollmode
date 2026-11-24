@@ -33,8 +33,10 @@ settings on a left click.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
-- **Stats tab**: headline speed, distance and ball turns, longest coast, daily
-  distance, and a distance ladder from bus lengths to the Sun.
+- **Stats tab**: trackball stats are collected in pointer mode too: ball
+  distance, turns, top speed, active time, days and the bus-to-Sun ladder.
+  Flicks and coast remain scroll-only. A mouse gets its own stats: movement,
+  wheel notches/pages, clicks, active time and days.
 - **Battery**: for wireless mice that report a battery, a small charge ring on
   the bar ball, a battery badge in the panel header, and charge settings in the
   Device tab. Reads Logitech HID++ battery data, keeps the last known value
@@ -239,13 +241,20 @@ never writes battery settings to the device.
   <img src="docs/stats.png" alt="Stats tab" width="340">
 </p>
 
-The **Stats** tab opens with three headline numbers: record speed, distance the
-ball rolled and ball turns. Below them, clearly separated sections cover totals,
-flick records, days, and a distance ladder that climbs from bus lengths and
-football fields through track laps and marathons to a lap around the Earth, a
-trip to the Moon and an orbit around the Sun. Counts use enough decimal places
-to move on a normal day of rolling. The big targets show progress toward the
-current lap, trip or orbit, with the number already completed in brackets.
+The **Stats** tab for a trackball opens with three headline numbers: record
+speed, distance the ball rolled and ball turns. Ball movement is counted in
+pointer mode as well as scroll/sniper, so the distance and turns grow whenever
+the ball is used; flick and coast records stay scroll-only. Below them are
+totals, flick records, days, and a distance ladder that climbs from bus lengths
+and football fields through track laps and marathons to a lap around the Earth,
+a trip to the Moon and an orbit around the Sun. Counts use enough decimal
+places to move on a normal day of rolling. The big targets show progress toward
+the current lap, trip or orbit, with the number already completed in brackets.
+
+For a mouse the same tab shows **movement, wheel notches/pages, clicks, active
+time and days**. Mouse movement is collected in pointer mode from the physical
+device without grabbing it. The Earth/Moon/Sun ladder is shown when the mouse
+reports a DPI; otherwise movement stays in raw counts and the tab says so.
 
 It collects automatically and is stored in
 `/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor
@@ -273,10 +282,19 @@ is stored as `device.selected` and the daemon re-grabs it.
   <img src="docs/menu-pending.png" alt="Device not applied" width="340">
 </p>
 
-### Device types
+### Device types and applicable settings
 
 The daemon classifies every pointer when it connects and keeps the result in
-`status.json` as `kind`, `code`, `confidence`, `sources` and `wireless`.
+`status.json` as `kind`, `code`, `confidence`, `sources`, `wireless` and the
+`supportsScroll` / `supportsStats` / `supportsButtons` flags. The panel uses
+those flags to show only the applicable parts:
+
+- **Trackball** — Scroll, Feel, Device and Stats; battery when wireless.
+- **Mouse** — Device and Stats only. The Device tab shows the picker, battery
+  when wireless, and a note that more mouse settings are coming. Scroll/Feel,
+  sniper and hotkeys are hidden.
+- **Trackpad / tablet / unknown** — Device only for now; unknown pointers keep
+  the scroll tabs so an unclassified trackball still works.
 
 - **HID++ `0x0005` device type** is authoritative where the device speaks it:
   `3` mouse, `4` trackpad, `5` trackball. HID++ is Logitech's protocol, so this
@@ -294,6 +312,10 @@ HID++ type overrides the fallback only for the matching receiver or device
 name, so a second mouse on the same machine cannot inherit the trackball type.
 Trackpads and tablets are classified for the device list; grabbing them for
 scroll mode needs absolute-axis handling later.
+
+The daemon also refuses to enter scroll/sniper mode for a mouse, trackpad or
+tablet. Mouse statistics are collected passively in pointer mode, without
+grabbing the device.
 
 With no pointing devices at all the panel only shows a notice and a Retry
 button, and the bar icon is dimmed:

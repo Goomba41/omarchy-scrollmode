@@ -279,32 +279,50 @@ def main():
     daemon = scrollmoded.Daemon(CONFIG, 1000, 1000)
     daemon.stats_path = os.path.join(directory, "stats.json")
     daemon.stats = daemon.load_stats()
+    daemon.device_kind = "trackball"
     converter = daemon.converter
     converter.counts_per_notch = 85.0
     converter.inertia_decay = 5.0
-    converter.gesture_raw_counts = 340.0
     converter.gesture_first = 100.0
     converter.last_motion = 100.1
-    converter.gesture_down = 340.0
-    converter.gesture_frames = 3
-    converter.last_peak_notches = 20.0
-    converter.peak_speed = 1700.0
+    converter.gesture_down = 20.0
+    converter.gesture_frames = 1
     converter.peak_triggered = True
     converter.release_notches = 8.0
+
+    daemon.record_raw_stats([
+        event(ecodes.EV_REL, ecodes.REL_X, 20),
+        event(ecodes.EV_REL, ecodes.REL_Y, 0),
+    ])
     daemon.update_stats()
     with open(daemon.stats_path) as handle:
         stats = json.load(handle)
-    print("flick stats:", {k: stats[k] for k in ("counts", "notches", "flicks", "max_peak_notches")})
-    assert stats["counts"] == 340.0, stats
-    assert stats["notches"] == 4.0, stats
-    assert stats["flicks"] == 1 and stats["coasted"] == 1, stats
-    assert stats["max_peak_notches"] == 20.0, stats
-    assert stats["max_coast_notches"] == 1.6, stats
-    assert sum(day["flicks"] for day in stats["days"].values()) == 1, stats
-    day = next(iter(stats["days"].values()))
-    assert day["counts"] == 340.0 and day["notches"] == 4.0, day
+    trackball = stats["trackball"]
+    print("trackball stats:", {k: trackball[k] for k in ("counts", "notches", "flicks")})
+    assert trackball["counts"] == 20.0, trackball
+    assert abs(trackball["notches"] - 20.0 / 85.0) < 1e-9, trackball
+    assert trackball["flicks"] == 1 and trackball["coasted"] == 1, trackball
+    assert trackball["max_coast_notches"] == 1.6, trackball
+    day = next(iter(trackball["days"].values()))
+    assert day["counts"] == 20.0 and abs(day["notches"] - 20.0 / 85.0) < 1e-9, day
+    assert day["flicks"] == 1, day
 
-    # Older statistics only stored notches per day; loading backfills counts.
+    # Mouse stats collect movement, physical wheel notches and clicks.
+    daemon.device_kind = "mouse"
+    daemon.record_raw_stats([
+        event(ecodes.EV_REL, ecodes.REL_X, 10),
+        event(ecodes.EV_REL, ecodes.REL_WHEEL, 1),
+        event(ecodes.EV_KEY, ecodes.BTN_LEFT, 1),
+    ])
+    daemon.save_stats()
+    with open(daemon.stats_path) as handle:
+        stats = json.load(handle)
+    mouse = stats["mouse"]
+    print("mouse stats:", {k: mouse[k] for k in ("counts", "wheel", "clicks")})
+    assert mouse["counts"] == 10.0, mouse
+    assert mouse["wheel"] == 1.0 and mouse["clicks"] == 1, mouse
+
+    # Older statistics only stored notches per day; loading migrates them.
     legacy_path = os.path.join(directory, "legacy.json")
     with open(legacy_path, "w") as handle:
         json.dump({
@@ -314,8 +332,8 @@ def main():
         }, handle)
     daemon.stats_path = legacy_path
     legacy = daemon.load_stats()
-    assert legacy["version"] == 2, legacy
-    assert legacy["days"]["2026-01-01"]["counts"] == 340.0, legacy
+    assert legacy["version"] == 3, legacy
+    assert legacy["trackball"]["days"]["2026-01-01"]["counts"] == 340.0, legacy
 
     # HID++ unified battery (0x1004) decoding.
     battery = scrollmoded.parse_battery(bytes([0x0F, 0x02]), bytes([95, 8, 0]))

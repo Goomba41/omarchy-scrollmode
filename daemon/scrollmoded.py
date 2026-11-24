@@ -1092,6 +1092,41 @@ class DeviceLost(Exception):
     pass
 
 
+def default_trackball_stats() -> dict:
+    return {
+        "counts": 0.0,
+        "notches": 0.0,
+        "flicks": 0,
+        "coasted": 0,
+        "scroll_ms": 0.0,
+        "up": 0.0,
+        "down": 0.0,
+        "left": 0.0,
+        "right": 0.0,
+        "max_peak_notches": 0.0,
+        "max_peak_counts": 0.0,
+        "max_flick_ms": 0.0,
+        "max_coast_notches": 0.0,
+        "days": {},
+    }
+
+
+def default_mouse_stats() -> dict:
+    return {
+        "counts": 0.0,
+        "wheel": 0.0,
+        "clicks": 0,
+        "active_ms": 0.0,
+        "up": 0.0,
+        "down": 0.0,
+        "left": 0.0,
+        "right": 0.0,
+        "max_speed": 0.0,
+        "dpi": 0.0,
+        "days": {},
+    }
+
+
 class BatteryMonitor(threading.Thread):
     """Poll the paired mouse battery without blocking the scroll event loop."""
 
@@ -1176,6 +1211,13 @@ class Daemon:
         self.battery = unavailable_battery()
         self.battery_dirty = False
         self.battery_thread = BatteryMonitor(self)
+        self.device_kind = "unknown"
+        self.supports_scroll = True
+        self.supports_stats = False
+        self.supports_buttons = False
+        self.stats_dirty = False
+        self.last_stats_save = 0.0
+        self.last_stats_at = 0.0
 
         self.sel = selectors.DefaultSelector()
         self.server: socket.socket | None = None
@@ -1329,6 +1371,11 @@ class Daemon:
                 active_confidence = confidence
                 active_wireless = wireless
 
+        self.device_kind = active_kind or "unknown"
+        self.supports_scroll = self.device_kind in ("trackball", "unknown")
+        self.supports_stats = self.device_kind in ("trackball", "mouse")
+        self.supports_buttons = self.device_kind in ("trackball", "unknown")
+
         configured = self.sniper_button_code()
         buttons: set[int] = set()
         if self.dev is not None:
@@ -1352,6 +1399,9 @@ class Daemon:
             "code": active_code,
             "confidence": active_confidence,
             "wireless": active_wireless,
+            "supportsScroll": self.supports_scroll,
+            "supportsStats": self.supports_stats,
+            "supportsButtons": self.supports_buttons,
             "hidden": hidden,
             "devices": listed,
             "sniperAvailable": sniper_available,
@@ -1388,6 +1438,9 @@ class Daemon:
         if self.mode == target:
             return self.mode
         if self.dev is None:
+            return self.mode
+        if not self.supports_scroll:
+            log(f"scroll mode is not supported for {self.device_kind}")
             return self.mode
 
         if self.grabbed and self.ui is not None:
@@ -1610,6 +1663,7 @@ class Daemon:
             self.frame.append(event)
 
     def handle_frame(self, frame: list) -> None:
+        self.record_raw_stats(frame)
         if self.mode not in ("scroll", "sniper") or self.ui is None:
             return
 
@@ -1668,25 +1722,6 @@ class Daemon:
             self.deactivate()
 
     def load_stats(self) -> dict:
-        default = {
-            "version": 2,
-            "started": "",
-            "updated": "",
-            "counts": 0.0,
-            "notches": 0.0,
-            "flicks": 0,
-            "coasted": 0,
-            "scroll_ms": 0.0,
-            "up": 0.0,
-            "down": 0.0,
-            "left": 0.0,
-            "right": 0.0,
-            "max_peak_notches": 0.0,
-            "max_peak_counts": 0.0,
-            "max_flick_ms": 0.0,
-            "max_coast_notches": 0.0,
-            "days": {},
-        }
         try:
             with open(self.stats_path, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
@@ -1694,23 +1729,43 @@ class Daemon:
             data = {}
         if not isinstance(data, dict):
             data = {}
-        for key, value in default.items():
-            if key not in data:
-                data[key] = value.copy() if isinstance(value, dict) else value
-        if not isinstance(data.get("days"), dict):
-            data["days"] = {}
+
+        # v3 keeps independent trackball and mouse sections. Older files were
+        # flat trackball data; migrate them in place.
+        legacy = data if "counts" in data and "trackball" not in data else {}
+        trackball = data.get("trackball") if isinstance(data.get("trackball"), dict) else legacy
+        mouse = data.get("mouse") if isinstance(data.get("mouse"), dict) else {}
+        stats = {
+            "version": 3,
+            "started": str(data.get("started") or ""),
+            "updated": str(data.get("updated") or ""),
+            "trackball": default_trackball_stats(),
+            "mouse": default_mouse_stats(),
+        }
+        for key, value in stats["trackball"].items():
+            if key in trackball:
+                stats["trackball"][key] = trackball[key]
+        for key, value in stats["mouse"].items():
+            if key in mouse:
+                stats["mouse"][key] = mouse[key]
+
+        if not isinstance(stats["trackball"].get("days"), dict):
+            stats["trackball"]["days"] = {}
+        if not isinstance(stats["mouse"].get("days"), dict):
+            stats["mouse"]["days"] = {}
+
         # Older statistics kept only notches per day. Rebuild counts from the
         # overall ratio so day distances stay correct after the upgrade.
-        total_notches = float(data.get("notches") or 0.0)
-        ratio = (float(data.get("counts") or 0.0) / total_notches
+        total_notches = float(stats["trackball"].get("notches") or 0.0)
+        ratio = (float(stats["trackball"].get("counts") or 0.0) / total_notches
                  if total_notches > 0 else 85.0)
-        for day in data["days"].values():
+        for day in stats["trackball"]["days"].values():
             if isinstance(day, dict) and not day.get("counts"):
                 day["counts"] = float(day.get("notches") or 0.0) * ratio
-        data["version"] = 2
-        return data
+        return stats
 
     def save_stats(self) -> None:
+        self.stats["updated"] = datetime.now().astimezone().isoformat(timespec="seconds")
         try:
             os.makedirs(os.path.dirname(self.stats_path), mode=0o755, exist_ok=True)
             tmp = self.stats_path + ".tmp"
@@ -1719,56 +1774,131 @@ class Daemon:
                 handle.write("\n")
             os.replace(tmp, self.stats_path)
             os.chmod(self.stats_path, 0o644)
+            self.stats_dirty = False
+            self.last_stats_save = time.monotonic()
         except OSError as exc:
             log(f"cannot write {self.stats_path}: {exc}")
 
+    def record_raw_stats(self, frame: list) -> None:
+        """Count physical pointer movement in every mode, without grabbing."""
+        if self.device_kind not in ("trackball", "mouse"):
+            return
+        dx = dy = 0.0
+        wheel_lo = 0.0
+        wheel_hi = 0.0
+        clicks = 0
+        for event in frame:
+            if event.type == ecodes.EV_REL:
+                if event.code == ecodes.REL_X:
+                    dx += event.value
+                elif event.code == ecodes.REL_Y:
+                    dy += event.value
+                elif event.code == ecodes.REL_WHEEL:
+                    wheel_lo += abs(event.value)
+                elif event.code == REL_WHEEL_HI_RES:
+                    wheel_hi += abs(event.value) / 120.0
+            elif (
+                event.type == ecodes.EV_KEY
+                and ecodes.BTN_MOUSE <= event.code <= ecodes.BTN_TASK
+                and event.value == 1
+            ):
+                clicks += 1
+        wheel = wheel_hi if wheel_hi else wheel_lo
+        if not (dx or dy or wheel or clicks):
+            return
+
+        now = time.monotonic()
+        dt = now - self.last_stats_at if self.last_stats_at else 0.01
+        self.last_stats_at = now
+        dt = max(0.001, min(1.0, dt))
+        now_dt = datetime.now().astimezone()
+        date = now_dt.date().isoformat()
+        moved = bool(dx or dy)
+
+        if self.device_kind == "mouse":
+            stats = self.stats["mouse"]
+            distance = math.hypot(dx, dy)
+            stats["counts"] = float(stats.get("counts") or 0.0) + distance
+            stats["wheel"] = float(stats.get("wheel") or 0.0) + wheel
+            stats["clicks"] = int(stats.get("clicks") or 0) + clicks
+            stats["up"] = float(stats.get("up") or 0.0) + max(0.0, -dy)
+            stats["down"] = float(stats.get("down") or 0.0) + max(0.0, dy)
+            stats["left"] = float(stats.get("left") or 0.0) + max(0.0, -dx)
+            stats["right"] = float(stats.get("right") or 0.0) + max(0.0, dx)
+            if moved:
+                stats["max_speed"] = max(
+                    float(stats.get("max_speed") or 0.0), distance / dt
+                )
+            duration = min(dt, 0.5) if moved else 0.05
+            stats["active_ms"] = float(stats.get("active_ms") or 0.0) + duration * 1000.0
+            days = stats["days"]
+            day = days.get(date)
+            if not isinstance(day, dict):
+                day = {"counts": 0.0, "wheel": 0.0, "clicks": 0, "ms": 0.0}
+                days[date] = day
+            day["counts"] = float(day.get("counts") or 0.0) + distance
+            day["wheel"] = float(day.get("wheel") or 0.0) + wheel
+            day["clicks"] = int(day.get("clicks") or 0) + clicks
+            day["ms"] = float(day.get("ms") or 0.0) + duration * 1000.0
+        else:
+            stats = self.stats["trackball"]
+            raw = math.hypot(dx, dy)
+            notches = raw / max(1.0, self.converter.counts_per_notch)
+            stats["counts"] = float(stats.get("counts") or 0.0) + raw
+            stats["notches"] = float(stats.get("notches") or 0.0) + notches
+            stats["up"] = float(stats.get("up") or 0.0) + max(0.0, -dy)
+            stats["down"] = float(stats.get("down") or 0.0) + max(0.0, dy)
+            stats["left"] = float(stats.get("left") or 0.0) + max(0.0, -dx)
+            stats["right"] = float(stats.get("right") or 0.0) + max(0.0, dx)
+            if moved:
+                stats["max_peak_counts"] = max(
+                    float(stats.get("max_peak_counts") or 0.0), raw / dt
+                )
+                stats["max_peak_notches"] = max(
+                    float(stats.get("max_peak_notches") or 0.0), notches / dt
+                )
+            duration = min(dt, 0.5) if moved else 0.05
+            stats["scroll_ms"] = float(stats.get("scroll_ms") or 0.0) + duration * 1000.0
+            days = stats["days"]
+            day = days.get(date)
+            if not isinstance(day, dict):
+                day = {"counts": 0.0, "notches": 0.0, "flicks": 0, "ms": 0.0}
+                days[date] = day
+            day["counts"] = float(day.get("counts") or 0.0) + raw
+            day["notches"] = float(day.get("notches") or 0.0) + notches
+            day["ms"] = float(day.get("ms") or 0.0) + duration * 1000.0
+
+        if not self.stats.get("started"):
+            self.stats["started"] = now_dt.isoformat()
+        self.stats_dirty = True
+
     def update_stats(self) -> None:
+        """Record one completed scroll gesture (trackball only)."""
+        if self.device_kind != "trackball":
+            return
         conv = self.converter
         now = datetime.now().astimezone()
         date = now.date().isoformat()
-        raw = conv.gesture_raw_counts
-        notches = raw / max(1.0, conv.counts_per_notch)
+        stats = self.stats["trackball"]
         duration = max(0.0, (conv.last_motion - conv.gesture_first) * 1000.0)
-
-        stats = self.stats
-        stats["counts"] = float(stats.get("counts") or 0.0) + raw
-        stats["notches"] = float(stats.get("notches") or 0.0) + notches
         stats["flicks"] = int(stats.get("flicks") or 0) + 1
-        stats["scroll_ms"] = float(stats.get("scroll_ms") or 0.0) + duration
-        stats["up"] = float(stats.get("up") or 0.0) + conv.gesture_up
-        stats["down"] = float(stats.get("down") or 0.0) + conv.gesture_down
-        stats["left"] = float(stats.get("left") or 0.0) + conv.gesture_left
-        stats["right"] = float(stats.get("right") or 0.0) + conv.gesture_right
-        stats["max_peak_notches"] = max(
-            float(stats.get("max_peak_notches") or 0.0), conv.last_peak_notches
-        )
-        stats["max_peak_counts"] = max(
-            float(stats.get("max_peak_counts") or 0.0), conv.peak_speed
-        )
         stats["max_flick_ms"] = max(
             float(stats.get("max_flick_ms") or 0.0), duration
         )
-
         if conv.peak_triggered:
             stats["coasted"] = int(stats.get("coasted") or 0) + 1
             coast = conv.release_notches / max(0.1, conv.inertia_decay)
             stats["max_coast_notches"] = max(
                 float(stats.get("max_coast_notches") or 0.0), coast
             )
-
         days = stats["days"]
         day = days.get(date)
         if not isinstance(day, dict):
             day = {"counts": 0.0, "notches": 0.0, "flicks": 0, "ms": 0.0}
             days[date] = day
-        day["counts"] = float(day.get("counts") or 0.0) + raw
-        day["notches"] = float(day.get("notches") or 0.0) + notches
         day["flicks"] = int(day.get("flicks") or 0) + 1
-        day["ms"] = float(day.get("ms") or 0.0) + duration
-
-        if not stats.get("started"):
-            stats["started"] = now.isoformat()
-        stats["updated"] = now.isoformat()
+        if not self.stats.get("started"):
+            self.stats["started"] = now.isoformat()
         self.save_stats()
 
     def flush_inertia(self) -> None:
@@ -1941,6 +2071,8 @@ class Daemon:
     # -- main loop ---------------------------------------------------------
 
     def tick(self, now: float) -> None:
+        if self.stats_dirty and now - self.last_stats_save >= 30.0:
+            self.save_stats()
         if self.battery_dirty:
             self.battery_dirty = False
             self.last_scan = 0.0
@@ -2105,6 +2237,8 @@ class Daemon:
     def shutdown(self) -> None:
         self.running = False
         self.battery_thread.stop()
+        if self.stats_dirty:
+            self.save_stats()
         self.deactivate()
         if self.server is not None:
             try:

@@ -119,6 +119,15 @@ Ui.Panel {
   readonly property string deviceKind: (status && status.kind) ? String(status.kind) : ""
   readonly property string deviceCode: (status && status.code) ? String(status.code) : "UN"
   readonly property string deviceTitle: root.deviceKindLabel(root.deviceKind)
+  readonly property bool supportsScroll: status && status.supportsScroll !== undefined
+    ? status.supportsScroll === true
+    : (root.deviceKind === "" || root.deviceKind === "trackball" || root.deviceKind === "unknown")
+  readonly property bool supportsStats: status && status.supportsStats !== undefined
+    ? status.supportsStats === true
+    : (root.deviceKind === "" || root.deviceKind === "trackball" || root.deviceKind === "mouse")
+  readonly property bool supportsButtons: status && status.supportsButtons !== undefined
+    ? status.supportsButtons === true
+    : (root.deviceKind === "" || root.deviceKind === "trackball" || root.deviceKind === "unknown")
 
   function deviceKindLabel(kind) {
     if (kind === "trackball") return strings.t("device.kind.trackball")
@@ -156,7 +165,8 @@ Ui.Panel {
   readonly property var batteryInfo: (status && status.battery && typeof status.battery === "object")
     ? status.battery : ({})
   readonly property bool batteryWireless: !!(batteryInfo && batteryInfo.wireless === true)
-  readonly property bool batteryAvailable: root.present
+  readonly property bool deviceWireless: !!(status && status.wireless === true)
+  readonly property bool batteryAvailable: root.present && root.deviceWireless
     && root.batteryWireless && !!(batteryInfo && batteryInfo.available === true)
   readonly property int batteryPercent: batteryAvailable
     && batteryInfo.percent !== null && batteryInfo.percent !== undefined
@@ -228,16 +238,22 @@ Ui.Panel {
       return ({})
     }
   }
-  readonly property real statCounts: Number(statsInfo.counts || 0)
-  readonly property real statNotches: Number(statsInfo.notches || 0)
-  readonly property int statFlicks: Number(statsInfo.flicks || 0)
-  readonly property int statCoasted: Number(statsInfo.coasted || 0)
-  readonly property real statScrollMs: Number(statsInfo.scroll_ms || 0)
-  readonly property real statPeak: Number(statsInfo.max_peak_notches || 0)
-  readonly property real statPeakCounts: Number(statsInfo.max_peak_counts || 0)
-  readonly property real statLongestCoast: Number(statsInfo.max_coast_notches || 0)
-  readonly property real statLongestFlick: Number(statsInfo.max_flick_ms || 0)
-  readonly property var statDays: (statsInfo && statsInfo.days) ? statsInfo.days : ({})
+  readonly property var trackballInfo: {
+    if (statsInfo && statsInfo.trackball) return statsInfo.trackball
+    if (statsInfo && statsInfo.counts !== undefined) return statsInfo
+    return ({})
+  }
+  readonly property var mouseInfo: (statsInfo && statsInfo.mouse) ? statsInfo.mouse : ({})
+  readonly property real statCounts: Number(trackballInfo.counts || 0)
+  readonly property real statNotches: Number(trackballInfo.notches || 0)
+  readonly property int statFlicks: Number(trackballInfo.flicks || 0)
+  readonly property int statCoasted: Number(trackballInfo.coasted || 0)
+  readonly property real statScrollMs: Number(trackballInfo.scroll_ms || 0)
+  readonly property real statPeak: Number(trackballInfo.max_peak_notches || 0)
+  readonly property real statPeakCounts: Number(trackballInfo.max_peak_counts || 0)
+  readonly property real statLongestCoast: Number(trackballInfo.max_coast_notches || 0)
+  readonly property real statLongestFlick: Number(trackballInfo.max_flick_ms || 0)
+  readonly property var statDays: (trackballInfo && trackballInfo.days) ? trackballInfo.days : ({})
   readonly property string statTodayKey: Qt.formatDate(new Date(), "yyyy-MM-dd")
   readonly property var statToday: statDays[root.statTodayKey] || ({})
   readonly property real statTodayKm: root.dayKm(statToday)
@@ -261,10 +277,10 @@ Ui.Panel {
     return Qt.formatDate(date, "d MMM yyyy")
   }
   readonly property string statDirection: {
-    var up = Number(statsInfo.up || 0)
-    var down = Number(statsInfo.down || 0)
-    var left = Number(statsInfo.left || 0)
-    var right = Number(statsInfo.right || 0)
+    var up = Number(trackballInfo.up || 0)
+    var down = Number(trackballInfo.down || 0)
+    var left = Number(trackballInfo.left || 0)
+    var right = Number(trackballInfo.right || 0)
     var top = Math.max(up, down, left, right)
     if (top <= 0) return "—"
     if (up === top) return strings.t("stats.up")
@@ -276,6 +292,69 @@ Ui.Panel {
   readonly property real statKm: statTurns * ballCircumference / 1000
   readonly property real statRpm: statPeakCounts / countsPerTurn * 60
   readonly property real statCoastPct: statFlicks > 0 ? 100 * statCoasted / statFlicks : 0
+
+  readonly property real mouseCounts: Number(mouseInfo.counts || 0)
+  readonly property real mouseWheel: Number(mouseInfo.wheel || 0)
+  readonly property int mouseClicks: Number(mouseInfo.clicks || 0)
+  readonly property real mouseActiveMs: Number(mouseInfo.active_ms || 0)
+  readonly property real mousePeak: Number(mouseInfo.max_speed || 0)
+  readonly property real mouseDpi: Number(mouseInfo.dpi || 0)
+  readonly property var mouseDays: (mouseInfo && mouseInfo.days) ? mouseInfo.days : ({})
+  readonly property var mouseToday: mouseDays[root.statTodayKey] || ({})
+  readonly property real mouseKm: root.mouseDpi > 0
+    ? root.mouseCounts / root.mouseDpi * 0.0254 / 1000 : 0
+  readonly property bool mouseHasDistance: root.mouseDpi > 0
+  readonly property int mouseActiveDays: Object.keys(mouseDays).length
+  readonly property string mouseBestKey: {
+    var best = ""
+    var bestValue = -1
+    for (var key in mouseDays) {
+      var value = Number((mouseDays[key] || {}).counts || 0)
+      if (value > bestValue) {
+        bestValue = value
+        best = key
+      }
+    }
+    return best
+  }
+  readonly property real mouseBestCounts: root.mouseBestKey !== ""
+    ? Number((mouseDays[root.mouseBestKey] || {}).counts || 0) : 0
+  readonly property real mouseBestKm: root.mouseBestKey !== ""
+    ? root.mouseDayKm(mouseDays[root.mouseBestKey] || ({})) : 0
+  readonly property string mouseBestLabel: root.mouseBestKey === "" ? "—"
+    : Qt.formatDate(new Date(root.mouseBestKey + "T12:00:00"), "d MMM yyyy")
+  readonly property string mouseDirection: {
+    var up = Number(mouseInfo.up || 0)
+    var down = Number(mouseInfo.down || 0)
+    var left = Number(mouseInfo.left || 0)
+    var right = Number(mouseInfo.right || 0)
+    var top = Math.max(up, down, left, right)
+    if (top <= 0) return "—"
+    if (up === top) return strings.t("stats.up")
+    if (down === top) return strings.t("stats.down")
+    if (left === top) return strings.t("stats.left")
+    return strings.t("stats.right")
+  }
+  readonly property bool mouseEmpty: mouseCounts <= 0 && mouseWheel <= 0 && mouseClicks <= 0
+  readonly property string mouseMovementText: root.mouseHasDistance
+    ? root.fmtDistance(root.mouseKm)
+    : root.fmtNumber(root.mouseCounts, 0) + " " + strings.t("stats.countsUnit")
+
+  function mouseDayKm(day) {
+    if (root.mouseDpi <= 0) return 0
+    return Number(day.counts || 0) / root.mouseDpi * 0.0254 / 1000
+  }
+
+  function mouseDayText(day) {
+    if (root.mouseHasDistance) return root.fmtDistance(root.mouseDayKm(day))
+    return root.fmtNumber(Number(day.counts || 0), 0) + " "
+      + strings.t("stats.countsUnit")
+  }
+
+  function cosmicProgressKm(km, targetKm) {
+    return statProgressPercent(km, targetKm)
+      + " (" + fmtNumber(statCompleted(km, targetKm), 0) + ")"
+  }
 
   function fmtNumber(value, digits) {
     var number = Number(value)
@@ -382,6 +461,23 @@ Ui.Panel {
   readonly property color armedColor: "#dbbc7f"
 
   property int tab: 0
+  readonly property var tabOptions: {
+    var options = []
+    if (root.supportsScroll) {
+      options.push({ index: 0, label: strings.t("tab.scroll") })
+      options.push({ index: 1, label: strings.t("tab.feel") })
+    }
+    options.push({ index: 2, label: strings.t("tab.device") })
+    if (root.supportsStats)
+      options.push({ index: 3, label: strings.t("tab.stats") })
+    return options
+  }
+  function ensureTab() {
+    var options = root.tabOptions
+    for (var i = 0; i < options.length; i++)
+      if (options[i].index === root.tab) return
+    root.tab = options.length ? options[0].index : 2
+  }
   property bool sniperDone: false
   property int lastSniperCode: 0
 
@@ -474,9 +570,13 @@ Ui.Panel {
 
   Component.onCompleted: {
     syncPending()
+    ensureTab()
     installProbe.running = true
   }
-  onStatusChanged: syncPending()
+  onStatusChanged: {
+    syncPending()
+    ensureTab()
+  }
 
   Process {
     id: installProbe
@@ -908,30 +1008,26 @@ Ui.Panel {
             spacing: Style.space(4)
 
             Repeater {
-              model: [
-                strings.t("tab.scroll"),
-                strings.t("tab.feel"),
-                strings.t("tab.device"),
-                strings.t("tab.stats")
-              ]
+              model: root.tabOptions
 
               delegate: Ui.Button {
                 required property var modelData
-                required property int index
-                width: (parent.width - 3 * parent.spacing) / 4
+
+                width: (parent.width - (root.tabOptions.length - 1) * parent.spacing)
+                  / Math.max(1, root.tabOptions.length)
                 height: Style.spacing.controlHeight
-                text: modelData
+                text: modelData.label
                 bordered: true
-                selected: root.tab === index
+                selected: root.tab === modelData.index
                 foreground: Color.popups.text
-                onClicked: root.tab = index
+                onClicked: root.tab = modelData.index
               }
             }
           }
 
           Flickable {
             id: statsFlick
-            visible: root.tab === 3
+            visible: root.tab === 3 && root.deviceKind !== "mouse"
             width: parent.width
             height: Math.min(statsColumn.implicitHeight, Style.space(700))
             contentWidth: width
@@ -947,7 +1043,7 @@ Ui.Panel {
               spacing: Style.space(14)
 
               Text {
-                visible: root.statFlicks === 0
+                visible: root.statCounts <= 0
                 width: parent.width
                 text: strings.t("stats.empty")
                 textFormat: Text.PlainText
@@ -959,7 +1055,7 @@ Ui.Panel {
               }
 
               Row {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 spacing: Style.space(8)
 
@@ -1050,7 +1146,7 @@ Ui.Panel {
               }
 
               Column {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 spacing: Style.space(6)
 
@@ -1071,7 +1167,7 @@ Ui.Panel {
               }
 
               Column {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 spacing: Style.space(6)
 
@@ -1092,7 +1188,7 @@ Ui.Panel {
               }
 
               Column {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 spacing: Style.space(6)
 
@@ -1134,7 +1230,7 @@ Ui.Panel {
               }
 
               Column {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 spacing: Style.space(6)
 
@@ -1152,9 +1248,236 @@ Ui.Panel {
               }
 
               Text {
-                visible: root.statFlicks > 0
+                visible: root.statCounts > 0
                 width: parent.width
                 text: strings.t("stats.note")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.4
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                wrapMode: Text.WordWrap
+              }
+            }
+          }
+
+          Flickable {
+            id: mouseStatsFlick
+            visible: root.tab === 3 && root.deviceKind === "mouse"
+            width: parent.width
+            height: Math.min(mouseStatsColumn.implicitHeight, Style.space(700))
+            contentWidth: width
+            contentHeight: mouseStatsColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.VerticalFlick
+            interactive: contentHeight > height
+
+            Column {
+              id: mouseStatsColumn
+              width: parent.width
+              spacing: Style.space(14)
+
+              Text {
+                visible: root.mouseEmpty
+                width: parent.width
+                text: strings.t("stats.mouseEmpty")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.65
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                wrapMode: Text.WordWrap
+              }
+
+              Row {
+                visible: !root.mouseEmpty
+                width: parent.width
+                spacing: Style.space(8)
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtNumber(root.mousePeak, 0) + " /s"
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.topPointerSpeed")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtNumber(root.mouseWheel, 0)
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.wheelNotches")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+
+                Column {
+                  width: (parent.width - 2 * parent.spacing) / 3
+                  spacing: 0
+
+                  Text {
+                    width: parent.width
+                    text: root.fmtNumber(root.mouseClicks, 0)
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    font.family: Style.font.family
+                    font.pixelSize: Math.round(Style.font.title * 1.35)
+                    elide: Text.ElideRight
+                  }
+                  Text {
+                    width: parent.width
+                    text: strings.t("stats.clicks")
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.55
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    elide: Text.ElideRight
+                  }
+                }
+              }
+
+              Column {
+                visible: !root.mouseEmpty
+                width: parent.width
+                spacing: Style.space(6)
+
+                StatHeader { text: strings.t("stats.sectionTotals") }
+                StatPair {
+                  label: strings.t("stats.wheelNotches")
+                  value: root.fmtNumber(root.mouseWheel, 0)
+                  label2: strings.t("stats.pages")
+                  value2: root.fmtNumber(root.mouseWheel / 20, 0)
+                }
+                StatPair {
+                  label: strings.t("stats.activeTime")
+                  value: root.fmtDuration(root.mouseActiveMs)
+                  label2: strings.t("stats.movement")
+                  value2: root.mouseMovementText
+                }
+                StatPair {
+                  label: strings.t("stats.clicks")
+                  value: root.fmtNumber(root.mouseClicks, 0)
+                  label2: strings.t("stats.mostly")
+                  value2: root.mouseDirection
+                }
+              }
+
+              Column {
+                visible: !root.mouseEmpty
+                width: parent.width
+                spacing: Style.space(6)
+
+                StatHeader { text: strings.t("stats.sectionFun") }
+                Text {
+                  visible: !root.mouseHasDistance
+                  width: parent.width
+                  text: strings.t("stats.mouseNoDpi")
+                  textFormat: Text.PlainText
+                  color: Color.popups.text
+                  opacity: 0.55
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
+                }
+                Column {
+                  visible: root.mouseHasDistance
+                  width: parent.width
+                  spacing: Style.space(6)
+
+                  StatRow {
+                    label: strings.t("stats.buses")
+                    value: root.fmtMultiple(root.mouseKm * 1000 / 12)
+                  }
+                  StatRow {
+                    label: strings.t("stats.footballFields")
+                    value: root.fmtMultiple(root.mouseKm * 1000 / 105)
+                  }
+                  StatRow {
+                    label: strings.t("stats.trackLaps")
+                    value: root.fmtMultiple(root.mouseKm * 1000 / 400)
+                  }
+                  StatRow {
+                    label: strings.t("stats.marathons")
+                    value: root.fmtMultiple(root.mouseKm / 42.195)
+                  }
+                  CosmicRow {
+                    label: strings.t("stats.earth")
+                    done: root.fmtDistance(root.mouseKm) + " of "
+                      + root.fmtNumber(40075, 0) + " km"
+                    progress: root.cosmicProgressKm(root.mouseKm, 40075)
+                  }
+                  CosmicRow {
+                    label: strings.t("stats.moon")
+                    done: root.fmtDistance(root.mouseKm) + " of "
+                      + root.fmtNumber(384400, 0) + " km"
+                    progress: root.cosmicProgressKm(root.mouseKm, 384400)
+                  }
+                  CosmicRow {
+                    label: strings.t("stats.sun")
+                    done: root.fmtDistance(root.mouseKm) + " of "
+                      + root.fmtNumber(940000000, 0) + " km"
+                    progress: root.cosmicProgressKm(root.mouseKm, 940000000)
+                  }
+                }
+              }
+
+              Column {
+                visible: !root.mouseEmpty
+                width: parent.width
+                spacing: Style.space(6)
+
+                StatHeader { text: strings.t("stats.sectionDays") }
+                StatPair {
+                  label: strings.t("stats.today")
+                  value: root.mouseDayText(root.mouseToday)
+                  label2: strings.t("stats.activeDays")
+                  value2: root.fmtNumber(root.mouseActiveDays, 0)
+                }
+                StatRow {
+                  label: strings.t("stats.bestDay")
+                  value: root.mouseBestLabel + " · " + root.mouseDayText(root.mouseDays[root.mouseBestKey] || ({}))
+                }
+              }
+
+              Text {
+                visible: !root.mouseEmpty
+                width: parent.width
+                text: strings.t("stats.mouseNote")
                 textFormat: Text.PlainText
                 color: Color.popups.text
                 opacity: 0.4
@@ -1416,13 +1739,25 @@ Ui.Panel {
             }
           }
 
+          Text {
+            visible: root.tab === 2 && !root.supportsButtons
+            width: parent.width
+            text: strings.t("device.limited")
+            textFormat: Text.PlainText
+            color: Color.popups.text
+            opacity: 0.55
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
+          }
+
           StatHeader {
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.supportsButtons
             text: strings.t("menu.buttons")
           }
 
           Column {
-            visible: root.sniperAvailable && root.tab === 2
+            visible: root.supportsButtons && root.sniperAvailable && root.tab === 2
             width: parent.width
             spacing: Style.space(6)
 
@@ -1572,12 +1907,12 @@ Ui.Panel {
           }
 
           Ui.PanelSeparator {
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.supportsButtons
             width: parent.width
           }
 
           Column {
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.supportsButtons
             width: parent.width
             spacing: Style.space(2)
 
@@ -1616,7 +1951,7 @@ Ui.Panel {
           }
 
           ActionButton {
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.supportsButtons
             width: parent.width
             idleText: strings.t("menu.openConfig")
             onActivated: Quickshell.execDetached(["omarchy-launch-editor", root.cfgPath])
@@ -1624,7 +1959,7 @@ Ui.Panel {
 
           Ui.Button {
             id: resetButton
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.supportsButtons
             width: parent.width
             property bool done: false
             property bool armed: false
