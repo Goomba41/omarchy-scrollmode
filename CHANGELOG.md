@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.0] — 2026-11-24
+
+### Changed
+
+- Replaced the literal mouse glyph with a cursor-arrow badge for mouse
+  devices. The arrow is extruded so it stays readable while turning around its
+  vertical axis.
+- Opening glides the arrow in and starts the idle turn; idle keeps a calm
+  rotation; clicking spins it up, brakes back to idle and draws horizontal
+  white air streams while fast.
+- The old mouse body, wheel spin, side buttons and click sound waves were
+  removed.
+
 ## [1.7.1] — 2026-11-24
 
 ### Changed

@@ -18,7 +18,7 @@ Item {
   Loader {
     id: loader
     anchors.fill: parent
-    sourceComponent: root.kind === "mouse" ? mouseComponent : trackballComponent
+    sourceComponent: root.kind === "mouse" ? cursorComponent : trackballComponent
   }
 
   Component {
@@ -33,8 +33,8 @@ Item {
   }
 
   Component {
-    id: mouseComponent
-    MouseGlyph {
+    id: cursorComponent
+    CursorGlyph {
       width: root.size
       height: root.size
       size: root.size
