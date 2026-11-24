@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-11-24
+
+### Added
+
+- Battery support for Logitech mice over HID++ `0x1004` (unified battery):
+  percentage, coarse level, charging state and external power.
+- A small charge ring in the bottom-right corner of the bar ball, colour-coded
+  green, amber, red and blue while charging.
+- A battery badge next to the mode badge in the panel header, with the
+  percentage and a battery or charging glyph.
+- A Battery section in the **Device** tab: charge/state readout, gauge,
+  **Show in bar**, **Low battery at** and **Check every** settings.
+- `omarchy-scrollmode battery` prints the current battery state.
+- Battery data is included in `/run/omarchy-scrollmode/status.json`.
+
+### Changed
+
+- The daemon polls the battery in a background thread, so HID++ reads never
+  block scrolling. The last known value is kept while the mouse sleeps and is
+  marked stale instead of disappearing.
+
 ## [1.3.5] — 2026-11-24
 
 ### Changed

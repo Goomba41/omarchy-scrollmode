@@ -57,7 +57,21 @@ LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
 
 HIDPP_SW_ID = 0x0A
 HIDPP_NAME_FEATURE = 0x0005
+HIDPP_BATTERY_FEATURE = 0x1004
 HIDPP_NAME_KEYS = ("m575", "ergo", "mx ", "trackball", "mouse")
+HIDPP_LOCK = threading.Lock()
+
+BATTERY_LEVELS = {1: "critical", 2: "low", 4: "good", 8: "full"}
+BATTERY_STATES = {
+    0: "discharging",
+    1: "charging",
+    2: "nearly-full",
+    3: "full",
+    4: "slow-charging",
+    5: "invalid",
+    6: "thermal-error",
+    7: "charging-error",
+}
 
 # Inertia: a fast flick keeps scrolling after the ball stops, decaying.
 INERTIA_TRIGGER_DEFAULT = 12.0  # notches/s at which a flick starts coasting
@@ -120,6 +134,11 @@ DEFAULTS = {
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
+    "battery": {
+        "show_bar": True,
+        "low_percent": 20,
+        "poll_seconds": 300,
+    },
 }
 
 
@@ -362,7 +381,7 @@ def _hidpp_name(fd, index: int) -> str | None:
     return raw[:length].decode("utf-8", "replace").strip("\x00 ")
 
 
-def _hidpp_probe_once() -> str:
+def _hidpp_probe_once_unlocked() -> str:
     for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         try:
             with open(os.path.join(link, "device", "uevent"), "r", encoding="utf-8") as handle:
@@ -396,6 +415,140 @@ def _hidpp_probe_once() -> str:
         finally:
             os.close(fd)
     return ""
+
+
+def _hidpp_probe_once() -> str:
+    with HIDPP_LOCK:
+        return _hidpp_probe_once_unlocked()
+
+
+def _hidpp_feature_index(fd, index: int, feature_id: int, timeout: float = 0.3):
+    response = _hidpp_request(fd, index, 0x00, 0, struct.pack(">H", feature_id), timeout)
+    if not response or response[2] != 0x00 or len(response) < 5:
+        return None
+    feature = response[4]
+    return feature if feature not in (0x00, 0xFF) else None
+
+
+def parse_battery(caps: bytes, info: bytes) -> dict:
+    """Decode the HID++ 0x1004 unified battery reads."""
+    if not caps or not info or len(caps) < 2 or len(info) < 3:
+        return unavailable_battery()
+    has_percentage = bool(caps[1] & 0x02)
+    percent = int(info[0]) if has_percentage else None
+    level = BATTERY_LEVELS.get(int(info[1]), "")
+    state = BATTERY_STATES.get(int(info[2]), "")
+    return {
+        "available": True,
+        "percent": max(0, min(100, percent)) if percent is not None else None,
+        "level": level,
+        "state": state,
+        "charging": state in ("charging", "nearly-full", "slow-charging"),
+        "source": "hidpp",
+        "updated": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+
+
+def unavailable_battery() -> dict:
+    return {
+        "available": False,
+        "percent": None,
+        "level": "",
+        "state": "",
+        "charging": False,
+        "source": "",
+        "updated": "",
+    }
+
+
+def _read_battery_at(node: str, index: int, feature: int):
+    try:
+        fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+    except OSError:
+        return None
+    try:
+        time.sleep(0.05)
+        while select.select([fd], [], [], 0)[0]:
+            os.read(fd, 64)
+        caps = _hidpp_request(fd, index, feature, 0)
+        info = _hidpp_request(fd, index, feature, 1)
+    finally:
+        os.close(fd)
+    if not caps or not info:
+        return None
+    return parse_battery(bytes(caps[4:]), bytes(info[4:]))
+
+
+_BATTERY_HINT = None
+
+
+def _find_battery() -> tuple[str, int, int] | None:
+    best = None
+    for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
+        try:
+            with open(os.path.join(link, "device", "uevent"), "r", encoding="utf-8") as handle:
+                uevent = handle.read()
+            with open(os.path.join(link, "device", "report_descriptor"), "rb") as handle:
+                descriptor = handle.read()
+        except OSError:
+            continue
+        if "046D" not in uevent.upper() or b"\x06\x00\xff" not in descriptor:
+            continue
+        node = "/dev/" + os.path.basename(link)
+        try:
+            fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
+        except OSError:
+            continue
+        try:
+            while select.select([fd], [], [], 0)[0]:
+                os.read(fd, 64)
+            time.sleep(0.05)
+            for index in range(1, 7):
+                # Ask for the feature first: absent devices answer the root
+                # request immediately, while the name lookup can wait for a
+                # sleep timeout on every empty pairing slot.
+                feature = _hidpp_feature_index(fd, index, HIDPP_BATTERY_FEATURE, 0.3)
+                if feature is None:
+                    continue
+                name = _hidpp_name(fd, index) or ""
+                lower = name.lower()
+                if any(key in lower for key in ("m575", "ergo", "trackball", "mouse")):
+                    score = 3
+                elif "mx " in lower:
+                    score = 1
+                else:
+                    score = 0
+                if best is None or score > best[0]:
+                    best = (score, node, index, feature)
+        except OSError:
+            continue
+        finally:
+            os.close(fd)
+    return (best[1], best[2], best[3]) if best else None
+
+
+def hidpp_battery_state() -> dict:
+    """Read the paired mouse battery over HID++, keeping the last good value."""
+    global _BATTERY_HINT
+    with HIDPP_LOCK:
+        if _BATTERY_HINT:
+            for attempt in range(2):
+                state = _read_battery_at(*_BATTERY_HINT)
+                if state and state["available"]:
+                    return state
+                if attempt == 0:
+                    time.sleep(0.1)
+            _BATTERY_HINT = None
+        hint = _find_battery()
+        if hint:
+            for attempt in range(2):
+                state = _read_battery_at(*hint)
+                if state and state["available"]:
+                    _BATTERY_HINT = hint
+                    return state
+                if attempt == 0:
+                    time.sleep(0.1)
+    return unavailable_battery()
 
 
 def hidpp_device_name() -> str:
@@ -814,6 +967,49 @@ class DeviceLost(Exception):
     pass
 
 
+class BatteryMonitor(threading.Thread):
+    """Poll the paired mouse battery without blocking the scroll event loop."""
+
+    def __init__(self, daemon: "Daemon") -> None:
+        super().__init__(name="battery", daemon=True)
+        self.owner = daemon
+        self.stop_event = threading.Event()
+        self.wake_event = threading.Event()
+        self.attempts = 0
+
+    def stop(self) -> None:
+        self.stop_event.set()
+        self.wake_event.set()
+
+    def wake(self) -> None:
+        self.wake_event.set()
+
+    def run(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                state = hidpp_battery_state()
+            except Exception as exc:  # never lose the poller to a bad report
+                log(f"battery read failed: {exc}")
+                state = None
+            self.owner.set_battery(state)
+            battery_cfg = self.owner.cfg.get("battery") or {}
+            try:
+                poll = float(battery_cfg.get("poll_seconds") or 300)
+            except (TypeError, ValueError):
+                poll = 300.0
+            # A missing battery is often just a sleeping mouse or a busy
+            # receiver. Try a few quick reads at startup, then settle into the
+            # configured interval.
+            if state and state.get("available"):
+                self.attempts = 0
+                wait = max(30.0, min(3600.0, poll))
+            else:
+                self.attempts += 1
+                wait = 3.0 if self.attempts <= 5 else 30.0
+            self.wake_event.wait(wait)
+            self.wake_event.clear()
+
+
 class Daemon:
     def __init__(self, config_path: str, uid: int, gid: int) -> None:
         self.config_path = config_path
@@ -851,6 +1047,9 @@ class Daemon:
         self.learn_code = 0
         self.learn_error = ""
         self.rescan_requested = False
+        self.battery = unavailable_battery()
+        self.battery_dirty = False
+        self.battery_thread = BatteryMonitor(self)
 
         self.sel = selectors.DefaultSelector()
         self.server: socket.socket | None = None
@@ -919,6 +1118,24 @@ class Daemon:
         except OSError as exc:
             log(f"cannot write {DEVICE_PATH}: {exc}")
 
+    def set_battery(self, state: dict | None) -> None:
+        previous = (self.battery.get("percent"), self.battery.get("state"))
+        if state and state.get("available"):
+            state = dict(state)
+            state["stale"] = False
+            self.battery = state
+            current = (state.get("percent"), state.get("state"))
+            if current != previous:
+                percent = f"{state['percent']}%" if state.get("percent") is not None else "level"
+                log(f"battery {percent} {state.get('state') or 'unknown'}")
+        elif self.battery.get("available"):
+            last = dict(self.battery)
+            last["stale"] = True
+            self.battery = last
+        else:
+            self.battery = unavailable_battery()
+        self.battery_dirty = True
+
     def refresh_status(self, force: bool = False) -> None:
         # Enumerating every /dev/input node costs a few hundred milliseconds on
         # a normal machine. That is invisible in pointer mode (the device is not
@@ -981,6 +1198,7 @@ class Daemon:
             "learning": self.learning_until > time.monotonic(),
             "learnCode": self.learn_code,
             "learnError": self.learn_error,
+            "battery": self.battery,
         }
         text = json.dumps(status, ensure_ascii=False)
         # Compare with the file instead of an in-memory cache: a restarting
@@ -1189,6 +1407,7 @@ class Daemon:
             return
         self.converter.configure(self.cfg)
         self.converter.speed = self._speed()
+        self.battery_thread.wake()
         log("config reloaded")
 
     # -- device events -----------------------------------------------------
@@ -1561,6 +1780,9 @@ class Daemon:
     # -- main loop ---------------------------------------------------------
 
     def tick(self, now: float) -> None:
+        if self.battery_dirty:
+            self.battery_dirty = False
+            self.last_scan = 0.0
         if self.learn_error and self.learn_error_until and now > self.learn_error_until:
             self.learn_error = ""
             self.learn_error_until = 0.0
@@ -1612,6 +1834,7 @@ class Daemon:
 
     def run(self) -> None:
         self.prepare_runtime()
+        self.battery_thread.start()
         signal.signal(signal.SIGTERM, self._stop)
         signal.signal(signal.SIGINT, self._stop)
         signal.signal(signal.SIGHUP, self._reload)
@@ -1720,6 +1943,7 @@ class Daemon:
 
     def shutdown(self) -> None:
         self.running = False
+        self.battery_thread.stop()
         self.deactivate()
         if self.server is not None:
             try:

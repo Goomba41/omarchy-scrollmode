@@ -6,6 +6,7 @@ Usage:
   omarchy-scrollmode sniper      scroll <-> sniper (no-op in pointer)
   omarchy-scrollmode on|off      force scroll or pointer mode
   omarchy-scrollmode status      print the current mode
+  omarchy-scrollmode battery     print the mouse battery
   omarchy-scrollmode reload      reload ~/.config/omarchy/scrollmode.json
   omarchy-scrollmode devices     list pointing devices
   omarchy-scrollmode use <id>    make a device the active one
@@ -75,6 +76,11 @@ DEFAULT_CONFIG = {
     "exit_on_click": True,
     "auto_exit_seconds": 0,
     "hold_max_seconds": 60,
+    "battery": {
+        "show_bar": True,
+        "low_percent": 20,
+        "poll_seconds": 300,
+    },
 }
 
 # path -> (kind, min, max)
@@ -98,6 +104,9 @@ SETTINGS = {
     "hotkey": ("string",),
     "sniper_hotkey": ("string",),
     "device.selected": ("string",),
+    "battery.show_bar": ("bool",),
+    "battery.low_percent": ("number", 5, 50),
+    "battery.poll_seconds": ("number", 30, 3600),
 }
 
 BLOCK_START = "-- >>> omarchy-scrollmode >>>"
@@ -380,6 +389,24 @@ def read_status() -> dict:
         return {}
 
 
+def show_battery() -> int:
+    status = read_status()
+    battery = status.get("battery") if isinstance(status.get("battery"), dict) else {}
+    if not battery.get("available"):
+        print("battery: not reported")
+        return 0
+    percent = battery.get("percent")
+    state = str(battery.get("state") or "unknown").replace("-", " ")
+    if percent is None:
+        text = state
+    else:
+        text = f"{int(percent)}% · {state}"
+    if battery.get("stale"):
+        text += " (last known)"
+    print(f"battery: {text}")
+    return 0
+
+
 def learn_button(args: list[str]) -> int:
     if args and args[0].lower() == "cancel":
         print(send("learn cancel"))
@@ -458,6 +485,9 @@ def main(argv: list[str]) -> int:
 
     if command == "reset":
         return reset_config()
+
+    if command == "battery":
+        return show_battery()
 
     if command == "learn":
         return learn_button(argv[1:])

@@ -33,6 +33,10 @@ settings on a left click.
   sniper button, hold threshold, auto-exit, reset, open config.
 - **Stats tab**: headline speed, distance and ball turns, longest coast, daily
   distance, and a distance ladder from bus lengths to the Sun.
+- **Battery**: a small charge ring on the bar ball, a battery badge in the
+  panel header, and charge settings in the Device tab. Reads Logitech HID++
+  battery data, keeps the last known value while the mouse sleeps, and never
+  writes to the device.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -205,6 +209,26 @@ The panel exposes two controls when it is on:
 the speed the ball had at release, so the hand-off does not jump back to the
 peak after the app has already animated a slower tail.
 
+### Battery
+
+The bar ball carries a small charge ring in its bottom-right corner. The ring
+is green while the charge is comfortable, amber near the warning threshold,
+red at or below it, and blue while charging. The panel header shows the same
+state as a battery badge next to the mode badge, with the percentage and a
+battery or charging glyph.
+
+The **Device** tab repeats the charge, its state and a thin gauge, then offers:
+
+- **Show in bar** — draw the ring on the bar ball.
+- **Low battery at** — the percentage at which the badge and ring turn urgent.
+- **Check every** — how often the daemon asks the mouse for its battery
+  (1, 5, 15 or 30 minutes). Plugging in updates it immediately.
+
+Battery is read over Logitech HID++ `0x1004` (unified battery). When the mouse
+is asleep or the receiver is busy the last known value is kept and marked
+"last known" rather than disappearing. The daemon never writes battery
+settings to the device.
+
 ### Stats
 
 <p align="center">
@@ -285,7 +309,13 @@ button, and the bar icon is dimmed:
   "sniper_button": 0,           // spare mouse button code; learn it in the panel
   "exit_on_click": true,        // any mouse button leaves scroll mode
   "auto_exit_seconds": 0,       // 0 = stay until toggled, otherwise idle timeout
-  "hold_max_seconds": 60        // safety cap for a stuck momentary hold
+  "hold_max_seconds": 60,       // safety cap for a stuck momentary hold
+
+  "battery": {
+    "show_bar": true,           // draw the charge ring on the bar ball
+    "low_percent": 20,          // badge/ring turn urgent at or below this
+    "poll_seconds": 300         // seconds between battery reads (30-3600)
+  }
 }
 ```
 
@@ -304,6 +334,7 @@ omarchy-scrollmode hotkey   # rewrite the Hyprland bindings
 
 ```sh
 omarchy-scrollmode toggle        # pointer <-> scroll
+omarchy-scrollmode battery       # print the mouse battery
 omarchy-scrollmode sniper        # scroll <-> sniper (no-op in pointer)
 omarchy-scrollmode on | off      # force scroll or pointer
 omarchy-scrollmode status        # print the current mode
@@ -394,7 +425,7 @@ released when the process exits.
 
 ```
 /run/omarchy-scrollmode/state        pointer | scroll | sniper
-/run/omarchy-scrollmode/status.json  devices, active id, hidden count
+/run/omarchy-scrollmode/status.json  devices, active id, hidden count, battery
 /run/omarchy-scrollmode/device       display name of the active device
 /run/omarchy-scrollmode/control.sock CLI control socket (0600, user-owned)
 

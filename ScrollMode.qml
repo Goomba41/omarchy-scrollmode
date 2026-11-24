@@ -36,9 +36,67 @@ Ui.Panel {
       : (root.scrolling ? strings.t("mode.scroll") : strings.t("mode.pointer")))
 
   property Component ballIcon: Component {
-    TrackballBall {
-      size: Style.bar.iconSize
-      ballColor: root.ballColor
+    Item {
+      implicitWidth: Style.bar.iconSize
+      implicitHeight: Style.bar.iconSize
+
+      TrackballBall {
+        anchors.fill: parent
+        size: Style.bar.iconSize
+        ballColor: root.ballColor
+      }
+
+      Canvas {
+        id: batteryRing
+        visible: root.batteryShowBar && root.batteryAvailable && root.batteryPercent >= 0
+        width: root.batteryDotSize
+        height: width
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        antialiasing: true
+        opacity: root.batteryStale ? 0.65 : 1
+
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.reset()
+          var w = width
+          var h = height
+          var cx = w / 2
+          var cy = h / 2
+          var stroke = Math.max(1.2, w * 0.18)
+          var r = Math.max(1, w / 2 - 1)
+          ctx.beginPath()
+          ctx.arc(cx, cy, r, 0, Math.PI * 2)
+          ctx.fillStyle = Qt.rgba(0, 0, 0, 0.72)
+          ctx.fill()
+          ctx.lineWidth = stroke
+          ctx.strokeStyle = Qt.rgba(1, 1, 1, 0.18)
+          ctx.beginPath()
+          ctx.arc(cx, cy, r - stroke / 2, 0, Math.PI * 2)
+          ctx.stroke()
+          var pct = Math.max(0, Math.min(100, root.batteryPercent))
+          if (pct > 0) {
+            ctx.strokeStyle = root.batteryColor
+            ctx.beginPath()
+            ctx.arc(cx, cy, r - stroke / 2, -Math.PI / 2,
+              -Math.PI / 2 + Math.PI * 2 * pct / 100)
+            ctx.stroke()
+          } else {
+            ctx.fillStyle = root.batteryColor
+            ctx.beginPath()
+            ctx.arc(cx, cy, Math.max(1, r * 0.4), 0, Math.PI * 2)
+            ctx.fill()
+          }
+        }
+
+        Connections {
+          target: root
+          function onBatteryPercentChanged() { batteryRing.requestPaint() }
+          function onBatteryColorChanged() { batteryRing.requestPaint() }
+          function onBatteryAvailableChanged() { batteryRing.requestPaint() }
+          function onBatteryShowBarChanged() { batteryRing.requestPaint() }
+        }
+      }
     }
   }
 
@@ -71,6 +129,66 @@ Ui.Panel {
   readonly property string learnErrorText: {
     if (root.learnError === "reserved") return strings.t("menu.sniperReserved")
     if (root.learnError === "timeout") return strings.t("menu.sniperTimeout")
+    return ""
+  }
+
+  readonly property var batteryInfo: (status && status.battery && typeof status.battery === "object")
+    ? status.battery : ({})
+  readonly property bool batteryAvailable: root.present
+    && !!(batteryInfo && batteryInfo.available === true)
+  readonly property int batteryPercent: batteryAvailable
+    && batteryInfo.percent !== null && batteryInfo.percent !== undefined
+    ? Math.max(0, Math.min(100, Number(batteryInfo.percent))) : -1
+  readonly property string batteryLevel: (batteryInfo && batteryInfo.level)
+    ? String(batteryInfo.level) : ""
+  readonly property string batteryState: (batteryInfo && batteryInfo.state)
+    ? String(batteryInfo.state) : ""
+  readonly property bool batteryCharging: !!(batteryInfo && batteryInfo.charging === true)
+  readonly property bool batteryStale: !!(batteryInfo && batteryInfo.stale === true)
+  readonly property int batteryLowPercent: Math.max(0, Number(root.value("battery.low_percent", 20)))
+  readonly property bool batteryShowBar: root.value("battery.show_bar", true) === true
+  readonly property int batteryDotSize: Math.max(8, Math.round(Style.bar.iconSize * 0.46))
+  readonly property color batteryColor: {
+    if (!root.batteryAvailable) return root.idleColor
+    if (root.batteryCharging) return "#5f87d9"
+    if (root.batteryPercent >= 0) {
+      if (root.batteryPercent <= root.batteryLowPercent) return "#d95f5f"
+      if (root.batteryPercent <= root.batteryLowPercent + 15) return "#d9a441"
+      return "#a7c080"
+    }
+    if (root.batteryLevel === "critical") return "#d95f5f"
+    if (root.batteryLevel === "low") return "#d9a441"
+    return "#a7c080"
+  }
+  readonly property string batteryPercentText: root.batteryPercent >= 0
+    ? root.batteryPercent + "%" : "—"
+  readonly property string batteryStateLabel: root.batteryStateText(root.batteryState)
+  readonly property string batteryIcon: {
+    if (root.batteryCharging) return "\uf0e7"
+    if (root.batteryPercent < 0) {
+      if (root.batteryLevel === "critical" || root.batteryLevel === "low") return "\uf244"
+      if (root.batteryLevel === "good") return "\uf242"
+      return "\uf240"
+    }
+    if (root.batteryPercent >= 90) return "\uf240"
+    if (root.batteryPercent >= 65) return "\uf241"
+    if (root.batteryPercent >= 40) return "\uf242"
+    if (root.batteryPercent >= 15) return "\uf243"
+    return "\uf244"
+  }
+  readonly property string batteryTooltip: !root.batteryAvailable ? ""
+    : " · " + root.batteryPercentText
+      + (root.batteryCharging ? " " + strings.t("battery.chargingSuffix") : "")
+
+  function batteryStateText(state) {
+    if (state === "charging") return strings.t("battery.state.charging")
+    if (state === "nearly-full") return strings.t("battery.state.nearlyFull")
+    if (state === "full") return strings.t("battery.state.full")
+    if (state === "slow-charging") return strings.t("battery.state.slowCharging")
+    if (state === "invalid") return strings.t("battery.state.invalid")
+    if (state === "thermal-error") return strings.t("battery.state.thermalError")
+    if (state === "charging-error") return strings.t("battery.state.chargingError")
+    if (state === "discharging") return strings.t("battery.state.discharging")
     return ""
   }
 
@@ -414,7 +532,7 @@ Ui.Panel {
     anchors.fill: parent
     bar: root.bar
     iconComponent: root.ballIcon
-    tooltipText: root.serviceState !== "active"
+    tooltipText: (root.serviceState !== "active"
       ? (root.serviceState === "missing" ? strings.t("tip.uninstalled") : strings.t("tip.stopped"))
       : !root.present
       ? strings.t("tip.none")
@@ -422,7 +540,7 @@ Ui.Panel {
         ? strings.t("tip.sniper")
         : root.scrolling
           ? strings.t("tip.scroll")
-          : strings.t("tip.pointer")
+          : strings.t("tip.pointer")) + root.batteryTooltip
     Accessible.role: Accessible.Button
     Accessible.name: root.activeName !== "" ? root.activeName : "Trackball"
     onPressed: function(button) {
@@ -478,8 +596,10 @@ Ui.Panel {
 
               Text {
                 id: titleText
-                width: Math.min(implicitWidth,
-                  Math.max(0, titleRow.width - modeBadge.width - titleRow.spacing))
+                width: Math.min(implicitWidth, Math.max(0,
+                  titleRow.width
+                    - (modeBadge.visible ? modeBadge.width + titleRow.spacing : 0)
+                    - (batteryBadge.visible ? batteryBadge.width + titleRow.spacing : 0)))
                 text: strings.t("menu.title")
                 textFormat: Text.PlainText
                 color: Color.popups.text
@@ -518,6 +638,45 @@ Ui.Panel {
                     text: root.modeLabel
                     textFormat: Text.PlainText
                     color: root.ballColor
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+                }
+              }
+
+              Rectangle {
+                id: batteryBadge
+
+                visible: root.batteryAvailable
+                width: visible ? implicitWidth : 0
+                anchors.verticalCenter: titleText.verticalCenter
+                implicitWidth: batteryBadgeRow.implicitWidth + Style.space(10)
+                implicitHeight: batteryBadgeRow.implicitHeight + Style.space(3)
+                radius: Style.space(4)
+                color: Qt.rgba(root.batteryColor.r, root.batteryColor.g,
+                  root.batteryColor.b, 0.15)
+                border.width: 1
+                border.color: Qt.rgba(root.batteryColor.r, root.batteryColor.g,
+                  root.batteryColor.b, 0.6)
+                opacity: root.batteryStale ? 0.7 : 1
+
+                Row {
+                  id: batteryBadgeRow
+                  anchors.centerIn: parent
+                  spacing: Style.space(3)
+
+                  Text {
+                    text: root.batteryIcon
+                    textFormat: Text.PlainText
+                    color: root.batteryColor
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                  }
+
+                  Text {
+                    text: root.batteryPercentText
+                    textFormat: Text.PlainText
+                    color: root.batteryColor
                     font.family: Style.font.family
                     font.pixelSize: Style.font.caption
                   }
@@ -1097,6 +1256,141 @@ Ui.Panel {
             integer: true
             source: Number(root.value("scroll.inertia_strength", 100))
             onCommit: function(v) { root.setValue("scroll.inertia_strength", v) }
+          }
+
+          Column {
+            visible: root.tab === 2
+            width: parent.width
+            spacing: Style.space(6)
+
+            StatHeader { text: strings.t("menu.battery") }
+
+            Item {
+              width: parent.width
+              height: Math.max(batteryLabel.implicitHeight, batteryValue.implicitHeight)
+
+              Text {
+                id: batteryLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("menu.batteryLevel")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+              }
+
+              Text {
+                id: batteryValue
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, parent.width - batteryLabel.width - Style.space(8))
+                text: root.batteryAvailable
+                  ? root.batteryPercentText
+                    + (root.batteryStateLabel !== "" ? " · " + root.batteryStateLabel : "")
+                    + (root.batteryStale ? " · " + strings.t("battery.stale") : "")
+                  : strings.t("battery.notReported")
+                textFormat: Text.PlainText
+                color: root.batteryAvailable ? root.batteryColor : Color.popups.text
+                opacity: root.batteryAvailable ? 1 : 0.55
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
+              }
+            }
+
+            Rectangle {
+              visible: root.batteryAvailable && root.batteryPercent >= 0
+              width: parent.width
+              height: Style.space(4)
+              radius: height / 2
+              color: Qt.rgba(Color.popups.text.r, Color.popups.text.g,
+                Color.popups.text.b, 0.10)
+
+              Rectangle {
+                width: parent.width * Math.max(0, Math.min(100, root.batteryPercent)) / 100
+                height: parent.height
+                radius: height / 2
+                color: root.batteryColor
+                opacity: root.batteryStale ? 0.65 : 1
+              }
+            }
+
+            ToggleRow {
+              visible: root.batteryAvailable
+              label: strings.t("menu.batteryShowBar")
+              help: strings.t("help.batteryShowBar")
+              checked: root.batteryShowBar
+              onClicked: root.setValue("battery.show_bar", !root.batteryShowBar)
+            }
+
+            SliderRow {
+              visible: root.batteryAvailable
+              label: strings.t("menu.batteryLow")
+              help: strings.t("help.batteryLow")
+              valueText: Math.round(sliderValue) + " %"
+              from: 5
+              to: 50
+              step: 5
+              tickCount: 10
+              integer: true
+              source: root.batteryLowPercent
+              onCommit: function(v) { root.setValue("battery.low_percent", v) }
+            }
+
+            Item {
+              visible: root.batteryAvailable
+              width: parent.width
+              height: Math.max(pollLabel.implicitHeight, pollHint.height)
+
+              Text {
+                id: pollLabel
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("menu.batteryPoll")
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+              }
+
+              HintIcon {
+                id: pollHint
+                anchors.left: pollLabel.right
+                anchors.leftMargin: Style.space(6)
+                anchors.verticalCenter: parent.verticalCenter
+                text: strings.t("help.batteryPoll")
+              }
+            }
+
+            Row {
+              visible: root.batteryAvailable
+              width: parent.width
+              spacing: Style.space(4)
+
+              Repeater {
+                model: [
+                  { value: "60", label: "1" },
+                  { value: "300", label: "5" },
+                  { value: "900", label: "15" },
+                  { value: "1800", label: "30" }
+                ]
+
+                delegate: Ui.Button {
+                  required property var modelData
+
+                  width: (parent.width - 3 * parent.spacing) / 4
+                  height: Style.spacing.controlHeight
+                  text: strings.t("battery.minutes").arg(modelData.label)
+                  bordered: true
+                  selected: String(Number(root.value("battery.poll_seconds", 300)))
+                    === modelData.value
+                  foreground: Color.popups.text
+                  onClicked: root.setValue("battery.poll_seconds", Number(modelData.value))
+                }
+              }
+            }
           }
 
           Column {

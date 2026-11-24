@@ -317,6 +317,16 @@ def main():
     assert legacy["version"] == 2, legacy
     assert legacy["days"]["2026-01-01"]["counts"] == 340.0, legacy
 
+    # HID++ unified battery (0x1004) decoding.
+    battery = scrollmoded.parse_battery(bytes([0x0F, 0x02]), bytes([95, 8, 0]))
+    print("battery:", battery)
+    assert battery["available"] is True, battery
+    assert battery["percent"] == 95 and battery["level"] == "full", battery
+    assert battery["state"] == "discharging" and battery["charging"] is False, battery
+    charging = scrollmoded.parse_battery(bytes([0x0F, 0x00]), bytes([0, 4, 1]))
+    assert charging["percent"] is None and charging["charging"] is True, charging
+    assert scrollmoded.parse_battery(b"", b"")["available"] is False
+
     print("frame path: ok")
     return 0
 
