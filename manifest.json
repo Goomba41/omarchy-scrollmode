@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "anton.scrollmode",
   "name": "Trackball Scroll Mode",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "author": "Anton Borodavkin (Goomba41)",
   "license": "MIT",
   "description": "Turn a trackball or mouse into a smooth, precise scroll wheel. Tap a hotkey to switch between pointer and scrolling, or hold it for a momentary sniper mode; pointer mode leaves the device untouched, so there is no added latency. Tune speed, axis lock, inertia and a learned side button in the native panel, watch local rolling statistics, and install the background service with one click. Bar widget, English and Russian included.",

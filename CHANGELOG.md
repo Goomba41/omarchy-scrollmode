@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.3] — 2026-11-24
+
+### Fixed
+
+- The device picker no longer copies the active mouse's name and type onto the
+  Logitech receiver. Each listed device is named and classified from its own
+  cached HID++ identity, so the trackball stays `[TB] Logitech ERGO M575S`
+  while a different mouse is active.
+
 ## [1.8.2] — 2026-11-24
 
 ### Fixed

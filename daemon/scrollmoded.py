@@ -1233,21 +1233,27 @@ class Daemon:
         name = getattr(self.dev, "name", "") or ""
         return self.dev is not None and "logitech" in name.lower()
 
-    def load_identity(self) -> dict | None:
+    def read_identity_cache(self) -> dict:
         try:
             with open(IDENTITY_PATH, "r", encoding="utf-8") as handle:
                 data = json.load(handle)
         except (OSError, ValueError):
-            return None
+            return {}
         if not isinstance(data, dict):
-            return None
+            return {}
         devices = data.get("devices")
         if isinstance(devices, dict):
-            entry = devices.get(self.active_id)
-        elif data.get("id") == self.active_id:
-            entry = data  # migrate the single-device cache
-        else:
-            entry = None
+            return {
+                str(key): entry
+                for key, entry in devices.items()
+                if key and isinstance(entry, dict) and entry.get("name")
+            }
+        if data.get("id") and data.get("name"):
+            return {str(data["id"]): data}  # migrate the single-device cache
+        return {}
+
+    def load_identity(self) -> dict | None:
+        entry = self.read_identity_cache().get(self.active_id)
         if not isinstance(entry, dict) or not entry.get("name"):
             return None
         return entry
@@ -1257,20 +1263,7 @@ class Daemon:
             return
         try:
             os.makedirs(os.path.dirname(IDENTITY_PATH), mode=0o755, exist_ok=True)
-            devices = {}
-            try:
-                with open(IDENTITY_PATH, "r", encoding="utf-8") as handle:
-                    previous = json.load(handle)
-                if isinstance(previous, dict):
-                    if isinstance(previous.get("devices"), dict):
-                        devices = previous["devices"]
-                    elif previous.get("id") and previous.get("name"):
-                        devices[previous["id"]] = {
-                            "name": previous["name"],
-                            "type": previous.get("type"),
-                        }
-            except (OSError, ValueError):
-                devices = {}
+            devices = self.read_identity_cache()
             devices[device_id] = {"name": raw, "type": type_code}
             tmp = IDENTITY_PATH + ".tmp"
             with open(tmp, "w", encoding="utf-8") as handle:
@@ -1416,19 +1409,36 @@ class Daemon:
         active_code = "UN"
         active_confidence = "low"
         active_wireless = False
+        identities = self.read_identity_cache()
         for device in devices:
             name = device["name"]
             raw = device.get("raw", "").lower()
-            if self.device_name and "logitech usb receiver" in raw:
+            receiver = "logitech usb receiver" in raw
+            cached = identities.get(device["id"])
+            if cached:
+                name = friendly_device_name(cached["name"])
+            if (
+                receiver
+                and device["id"] == self.active_id
+                and self.device_name
+                and (self.identity_ok or not cached)
+            ):
                 name = self.device_name
             kind = device.get("kind", "unknown")
             code = device.get("code", "UN")
             confidence = device.get("confidence", "low")
             sources = list(device.get("sources") or [])
             wireless = bool(device.get("wireless"))
-            if self.hidpp_type in HIDPP_TYPE_KINDS and (
-                "logitech usb receiver" in raw
-                or _hidpp_name_matches(self.device_name, device.get("raw", ""), name)
+            hidpp_type = cached.get("type") if cached else None
+            if device["id"] == self.active_id and self.hidpp_type is not None:
+                hidpp_type = self.hidpp_type
+            if hidpp_type in HIDPP_TYPE_KINDS and (receiver or cached):
+                kind = HIDPP_TYPE_KINDS[hidpp_type]
+                code = DEVICE_CODES.get(kind, "UN")
+                confidence = "high"
+                sources = ["hidpp:0x0005"]
+            elif self.hidpp_type in HIDPP_TYPE_KINDS and (
+                _hidpp_name_matches(self.device_name, device.get("raw", ""), name)
             ):
                 kind = HIDPP_TYPE_KINDS[self.hidpp_type]
                 code = DEVICE_CODES.get(kind, "UN")
