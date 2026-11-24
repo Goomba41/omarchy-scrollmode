@@ -1,5 +1,4 @@
 {
-  "menu.title": "Trackball",
   "menu.speed": "Scroll speed",
   "menu.speedHint": "Higher is faster.",
   "menu.sniper": "Sniper speed",
@@ -133,5 +132,10 @@
   "battery.state.invalid": "Invalid battery",
   "battery.state.thermalError": "Thermal error",
   "battery.state.chargingError": "Charging error",
-  "menu.buttons": "Buttons & hotkeys"
+  "menu.buttons": "Buttons & hotkeys",
+  "device.kind.trackball": "Trackball",
+  "device.kind.mouse": "Mouse",
+  "device.kind.trackpad": "Trackpad",
+  "device.kind.tablet": "Tablet",
+  "device.kind.unknown": "Pointer"
 }

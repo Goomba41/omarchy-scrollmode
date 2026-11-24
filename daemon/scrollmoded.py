@@ -86,6 +86,7 @@ RESERVED_BUTTONS = frozenset((158, 159, 272, 273, 274, 275, 276, 277, 278))
 # Models that are trackballs even when the advertised name omits the word.
 TRACKBALL_KEYS = (
     "trackball",
+    "track ball",
     "m570",
     "m575",
     "mx ergo",
@@ -97,7 +98,22 @@ TRACKBALL_KEYS = (
     "huge",
     "gameball",
     "ploopy",
+    "trackman",
+    "thumb ball",
+    "kensington",
+    "elecom",
 )
+TRACKPAD_KEYS = ("touchpad", "trackpad", "touch pad", "magic trackpad")
+TABLET_KEYS = ("tablet", "wacom", "intuos", "bamboo", "huion", "xp-pen", "xppen")
+MOUSE_KEYS = ("mouse", "mice")
+DEVICE_CODES = {
+    "trackball": "TB",
+    "mouse": "MS",
+    "trackpad": "TP",
+    "tablet": "TA",
+    "unknown": "UN",
+}
+HIDPP_TYPE_KINDS = {3: "mouse", 4: "trackpad", 5: "trackball"}
 
 VIRTUAL_NAME = "omarchy-scrollmode virtual pointer"
 VIRTUAL_PREFIX = "omarchy-scrollmode"
@@ -234,6 +250,80 @@ def device_identity(device: evdev.InputDevice) -> str:
     return "|".join(parts)
 
 
+def _hidpp_name_matches(hidpp_name: str, raw: str, display: str) -> bool:
+    words = [
+        word for word in re.findall(r"[a-z0-9]+", (hidpp_name or "").lower())
+        if len(word) >= 3 and word not in ("logitech", "trackball", "mouse")
+    ]
+    haystack = f"{raw} {display}".lower()
+    return bool(words) and any(word in haystack for word in words)
+
+
+def _pointer_wireless(name: str, props: dict) -> bool:
+    bus = str(props.get("ID_BUS") or "").lower()
+    model = " ".join(
+        str(props.get(key) or "") for key in ("ID_MODEL", "ID_MODEL_FROM_DATABASE", "ID_MODEL_ENC")
+    ).lower()
+    if bus == "bluetooth" or "bluetooth" in model:
+        return True
+    return "receiver" in model or "dongle" in model or "receiver" in name.lower()
+
+
+def _with_kind(kind: str, confidence: str, source: str) -> dict:
+    return {
+        "kind": kind,
+        "code": DEVICE_CODES.get(kind, "UN"),
+        "confidence": confidence,
+        "sources": [source],
+    }
+
+
+def classify_pointer(name: str, raw_name: str, props: dict, caps: dict, hidpp_type: int | None = None) -> dict:
+    """Classify a pointer from HID++, udev tags, names and evdev capabilities.
+
+    HID++ is authoritative where the device speaks it (Logitech today); the
+    other sources keep the classifier useful for every other vendor.
+    """
+    if hidpp_type in HIDPP_TYPE_KINDS:
+        kind = HIDPP_TYPE_KINDS[hidpp_type]
+        result = _with_kind(kind, "high", "hidpp:0x0005")
+        result["wireless"] = _pointer_wireless(name, props)
+        return result
+
+    if str(props.get("ID_INPUT_TRACKBALL") or "") == "1":
+        result = _with_kind("trackball", "high", "udev:ID_INPUT_TRACKBALL")
+    elif str(props.get("ID_INPUT_TOUCHPAD") or "") == "1":
+        result = _with_kind("trackpad", "high", "udev:ID_INPUT_TOUCHPAD")
+    elif str(props.get("ID_INPUT_TABLET") or "") == "1":
+        result = _with_kind("tablet", "high", "udev:ID_INPUT_TABLET")
+    else:
+        haystack = " ".join(
+            [
+                raw_name,
+                name,
+                str(props.get("ID_MODEL") or ""),
+                str(props.get("ID_MODEL_FROM_DATABASE") or ""),
+                str(props.get("ID_MODEL_ENC") or ""),
+                str(props.get("ID_VENDOR_FROM_DATABASE") or ""),
+            ]
+        ).lower()
+        if any(key in haystack for key in TRACKBALL_KEYS):
+            result = _with_kind("trackball", "medium", "name")
+        elif any(key in haystack for key in TRACKPAD_KEYS):
+            result = _with_kind("trackpad", "medium", "name")
+        elif any(key in haystack for key in TABLET_KEYS):
+            result = _with_kind("tablet", "medium", "name")
+        elif "receiver" not in haystack and any(key in haystack for key in MOUSE_KEYS):
+            result = _with_kind("mouse", "low", "name")
+        elif ecodes.EV_ABS in caps and ecodes.ABS_X in caps.get(ecodes.EV_ABS, []) \
+                and ecodes.ABS_Y in caps.get(ecodes.EV_ABS, []):
+            result = _with_kind("trackpad", "low", "evdev:absolute")
+        else:
+            result = _with_kind("unknown", "low", "evdev:relative")
+    result["wireless"] = _pointer_wireless(name, props)
+    return result
+
+
 def scan_pointers(excluded: list[str]) -> tuple[list[dict], int]:
     """Every pointing device on the system, as stable ids + display names."""
     seen = set()
@@ -266,13 +356,16 @@ def scan_pointers(excluded: list[str]) -> tuple[list[dict], int]:
             if identity in seen:
                 continue
             seen.add(identity)
+            display_name = pretty_device_name(props, name)
+            classification = classify_pointer(display_name, name, props, caps)
             found.append(
                 {
                     "id": identity,
-                    "name": pretty_device_name(props, name),
+                    "name": display_name,
                     "raw": name,
                     "path": path,
                     "seat": props.get("ID_SEAT") or "seat0",
+                    **classification,
                 }
             )
         finally:
@@ -381,7 +474,17 @@ def _hidpp_name(fd, index: int) -> str | None:
     return raw[:length].decode("utf-8", "replace").strip("\x00 ")
 
 
-def _hidpp_probe_once_unlocked() -> str:
+def _hidpp_device_type(fd, index: int):
+    feature = _hidpp_feature_index(fd, index, HIDPP_NAME_FEATURE)
+    if feature is None:
+        return None
+    response = _hidpp_request(fd, index, feature, 2)
+    if not response or len(response) < 5:
+        return None
+    return response[4]
+
+
+def _hidpp_probe_once_unlocked() -> tuple[str, int | None]:
     for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         try:
             with open(os.path.join(link, "device", "uevent"), "r", encoding="utf-8") as handle:
@@ -401,23 +504,31 @@ def _hidpp_probe_once_unlocked() -> str:
         try:
             while select.select([fd], [], [], 0)[0]:
                 os.read(fd, 64)
-            time.sleep(0.05)
-            first = ""
+            time.sleep(0.1)
+            best = None
             for index in range(1, 7):
                 name = _hidpp_name(fd, index)
                 if not name:
                     continue
-                if any(key in name.lower() for key in HIDPP_NAME_KEYS):
-                    return name
-                first = first or name
-            if first:
-                return first
+                type_code = _hidpp_device_type(fd, index)
+                if type_code in HIDPP_TYPE_KINDS:
+                    score = 3
+                elif any(key in name.lower() for key in HIDPP_NAME_KEYS):
+                    score = 1
+                else:
+                    score = 0
+                if best is None or score > best[0]:
+                    best = (score, name, type_code)
+                    if score == 3:
+                        break
+            if best:
+                return best[1], best[2]
         finally:
             os.close(fd)
-    return ""
+    return "", None
 
 
-def _hidpp_probe_once() -> str:
+def _hidpp_probe_once() -> tuple[str, int | None]:
     with HIDPP_LOCK:
         return _hidpp_probe_once_unlocked()
 
@@ -561,14 +672,18 @@ def hidpp_battery_state() -> dict:
     return unavailable_battery()
 
 
-def hidpp_device_name() -> str:
-    """Ask the Logitech receiver for the paired device name over HID++ 2.0."""
+def hidpp_device_identity() -> tuple[str, int | None]:
+    """Ask the Logitech receiver for the paired name and device type."""
     for attempt in range(3):
-        name = _hidpp_probe_once()
+        name, type_code = _hidpp_probe_once()
         if name:
-            return name
+            return name, type_code
         time.sleep(0.15)
-    return ""
+    return "", None
+
+
+def hidpp_device_name() -> str:
+    return hidpp_device_identity()[0]
 
 
 def looks_like_trackball(name: str) -> bool:
@@ -1045,6 +1160,7 @@ class Daemon:
         self.press = None
         self.button_hold: str | None = None
         self.device_name = ""
+        self.hidpp_type = None
         self.active_id = ""
         self.last_scan = 0.0
         self.empty_scans = 0
@@ -1108,14 +1224,15 @@ class Daemon:
     def probe_device_name(self, fallback: str) -> None:
         def work() -> None:
             try:
-                raw = hidpp_device_name()
+                raw, type_code = hidpp_device_identity()
             except Exception as exc:  # never let the probe hurt the daemon
-                log(f"hidpp name probe failed: {exc}")
-                raw = ""
+                log(f"hidpp identity probe failed: {exc}")
+                raw, type_code = "", None
+            self.hidpp_type = type_code
             self.device_name = friendly_device_name(raw) if raw else fallback
             self.write_device(self.device_name)
             self.refresh_status(force=True)
-            log(f"device name: {self.device_name}")
+            log(f"device name: {self.device_name} (type {type_code})")
 
         threading.Thread(target=work, name="hidpp-name", daemon=True).start()
 
@@ -1174,13 +1291,43 @@ class Daemon:
             self.empty_scans = 0
         listed = []
         active_name = ""
+        active_kind = ""
+        active_code = "UN"
+        active_confidence = "low"
+        active_wireless = False
         for device in devices:
             name = device["name"]
-            if self.device_name and "logitech usb receiver" in device.get("raw", "").lower():
+            raw = device.get("raw", "").lower()
+            if self.device_name and "logitech usb receiver" in raw:
                 name = self.device_name
-            listed.append({"id": device["id"], "name": name})
+            kind = device.get("kind", "unknown")
+            code = device.get("code", "UN")
+            confidence = device.get("confidence", "low")
+            sources = list(device.get("sources") or [])
+            wireless = bool(device.get("wireless"))
+            if self.hidpp_type in HIDPP_TYPE_KINDS and (
+                "logitech usb receiver" in raw
+                or _hidpp_name_matches(self.device_name, device.get("raw", ""), name)
+            ):
+                kind = HIDPP_TYPE_KINDS[self.hidpp_type]
+                code = DEVICE_CODES.get(kind, "UN")
+                confidence = "high"
+                sources = ["hidpp:0x0005"]
+            listed.append({
+                "id": device["id"],
+                "name": name,
+                "kind": kind,
+                "code": code,
+                "confidence": confidence,
+                "sources": sources,
+                "wireless": wireless,
+            })
             if device["id"] == self.active_id:
                 active_name = name
+                active_kind = kind
+                active_code = code
+                active_confidence = confidence
+                active_wireless = wireless
 
         configured = self.sniper_button_code()
         buttons: set[int] = set()
@@ -1201,6 +1348,10 @@ class Daemon:
             "activeId": self.active_id,
             "selectedId": str(self.cfg["device"].get("selected") or ""),
             "name": active_name,
+            "kind": active_kind,
+            "code": active_code,
+            "confidence": active_confidence,
+            "wireless": active_wireless,
             "hidden": hidden,
             "devices": listed,
             "sniperAvailable": sniper_available,

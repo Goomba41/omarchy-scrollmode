@@ -330,6 +330,31 @@ def main():
     assert charging["percent"] is None and charging["charging"] is True, charging
     assert scrollmoded.parse_battery(b"", b"")["available"] is False
 
+    # Pointer classification: HID++, udev, names, and generic fallbacks.
+    receiver = {"ID_MODEL": "USB_Receiver", "ID_BUS": "usb"}
+    trackball = scrollmoded.classify_pointer(
+        "Logitech ERGO M575S", "Logitech USB Receiver Mouse", receiver, {}, 5)
+    print("classified trackball:", trackball)
+    assert trackball["kind"] == "trackball" and trackball["code"] == "TB", trackball
+    assert trackball["confidence"] == "high" and trackball["wireless"] is True, trackball
+    tagged = scrollmoded.classify_pointer(
+        "Mystery pointer", "Mystery pointer", {"ID_INPUT_TRACKBALL": "1"}, {})
+    assert tagged["kind"] == "trackball" and tagged["code"] == "TB", tagged
+    named = scrollmoded.classify_pointer("Trackball Mouse", "Trackball Mouse", {}, {})
+    assert named["kind"] == "trackball" and named["confidence"] == "medium", named
+    mouse = scrollmoded.classify_pointer(
+        "Wings Tech Gaming Mouse", "Wings Tech Gaming Mouse", {"ID_BUS": "usb"}, {})
+    assert mouse["kind"] == "mouse" and mouse["code"] == "MS", mouse
+    trackpad = scrollmoded.classify_pointer("Magic Trackpad", "Magic Trackpad", {}, {})
+    assert trackpad["kind"] == "trackpad" and trackpad["code"] == "TP", trackpad
+    unknown = scrollmoded.classify_pointer(
+        "Logitech USB Receiver", "Logitech USB Receiver Mouse", receiver, {})
+    assert unknown["kind"] == "unknown" and unknown["code"] == "UN", unknown
+    assert scrollmoded._hidpp_name_matches(
+        "ERGO M575S Trackball", "Logitech USB Receiver Mouse", "Logitech ERGO M575S")
+    assert not scrollmoded._hidpp_name_matches(
+        "ERGO M575S Trackball", "Wings Tech Gaming Mouse", "Wings Tech Gaming Mouse")
+
     print("frame path: ok")
     return 0
 

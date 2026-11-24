@@ -116,6 +116,25 @@ Ui.Panel {
   readonly property string selectedId: (status && status.selectedId) ? String(status.selectedId) : ""
   readonly property bool present: !!(status && status.present === true)
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
+  readonly property string deviceKind: (status && status.kind) ? String(status.kind) : ""
+  readonly property string deviceCode: (status && status.code) ? String(status.code) : "UN"
+  readonly property string deviceTitle: root.deviceKindLabel(root.deviceKind)
+
+  function deviceKindLabel(kind) {
+    if (kind === "trackball") return strings.t("device.kind.trackball")
+    if (kind === "mouse") return strings.t("device.kind.mouse")
+    if (kind === "trackpad") return strings.t("device.kind.trackpad")
+    if (kind === "tablet") return strings.t("device.kind.tablet")
+    return strings.t("device.kind.unknown")
+  }
+
+  function deviceCodeForKind(kind) {
+    if (kind === "trackball") return "TB"
+    if (kind === "mouse") return "MS"
+    if (kind === "trackpad") return "TP"
+    if (kind === "tablet") return "TA"
+    return "UN"
+  }
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
   readonly property bool sniperAvailable: !!(status && status.sniperAvailable === true)
   readonly property int sniperCode: (status && Number(status.sniperCode)) ? Number(status.sniperCode) : 0
@@ -346,8 +365,11 @@ Ui.Panel {
   readonly property var deviceOptions: {
     var options = []
     var list = root.devices || []
-    for (var i = 0; i < list.length; i++)
-      options.push({ value: list[i].id, label: list[i].name })
+    for (var i = 0; i < list.length; i++) {
+      var kind = list[i].kind ? String(list[i].kind) : "unknown"
+      var code = list[i].code ? String(list[i].code) : root.deviceCodeForKind(kind)
+      options.push({ value: list[i].id, label: "[" + code + "] " + list[i].name })
+    }
     return options
   }
 
@@ -603,7 +625,7 @@ Ui.Panel {
                   titleRow.width
                     - (modeBadge.visible ? modeBadge.width + titleRow.spacing : 0)
                     - (batteryBadge.visible ? batteryBadge.width + titleRow.spacing : 0)))
-                text: strings.t("menu.title")
+                text: root.deviceTitle
                 textFormat: Text.PlainText
                 color: Color.popups.text
                 font.family: Style.font.family

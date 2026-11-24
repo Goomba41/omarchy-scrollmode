@@ -19,8 +19,10 @@ settings on a left click.
   clicks still work everywhere else. Horizontal scrolling is emitted too.
 - **No latency in pointer mode**: the device is not grabbed at all until scroll
   mode is on. If the daemon dies, the kernel drops the grab.
-- **Any pointing device**: the panel lists every mouse/trackball it finds and
-  you pick the one to grab. Selection survives reboots.
+- **Any pointing device**: the panel lists every relative pointer it finds,
+  labels it with a type code (`[TB]` trackball, `[MS]` mouse, `[TP]` trackpad,
+  `[TA]` tablet, `[UN]` unknown) and you pick the one to grab. Selection
+  survives reboots.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
 - **Drawn trackball**: a shaded sphere with a soft specular highlight and a
@@ -271,6 +273,28 @@ is stored as `device.selected` and the daemon re-grabs it.
   <img src="docs/menu-pending.png" alt="Device not applied" width="340">
 </p>
 
+### Device types
+
+The daemon classifies every pointer when it connects and keeps the result in
+`status.json` as `kind`, `code`, `confidence`, `sources` and `wireless`.
+
+- **HID++ `0x0005` device type** is authoritative where the device speaks it:
+  `3` mouse, `4` trackpad, `5` trackball. HID++ is Logitech's protocol, so this
+  is the high-confidence path for Logitech receivers and Bluetooth mice.
+- **udev/hwdb tags** such as `ID_INPUT_TRACKBALL`, `ID_INPUT_TOUCHPAD` and
+  `ID_INPUT_TABLET` are the next high-confidence source. Coverage is not
+  universal — the M575S, for example, is not tagged as a trackball here.
+- **Name and model hints** (`trackball`, `M575`, `MX Ergo`, `Magic Trackpad`,
+  `Wacom`, `mouse`, …) are used when no tag or HID++ type is available. These
+  are marked medium or low confidence.
+- A relative pointer with no usable signal is **unknown** (`UN`) rather than
+  being guessed as a mouse.
+
+HID++ type overrides the fallback only for the matching receiver or device
+name, so a second mouse on the same machine cannot inherit the trackball type.
+Trackpads and tablets are classified for the device list; grabbing them for
+scroll mode needs absolute-axis handling later.
+
 With no pointing devices at all the panel only shows a notice and a Retry
 button, and the bar icon is dimmed:
 
@@ -391,6 +415,9 @@ omarchy-scrollmode (CLI) ──unix socket──▶ scrollmoded
   converter to the sniper multiplier only while held and is not replayed.
 - Device names and the device list come from `/run/udev/data` plus HID++ 2.0
   `DeviceName` (`0x0005`) over the receiver's hidraw interface.
+- The panel title follows the active pointer type: **Trackball**, **Mouse**,
+  **Trackpad**, **Tablet** or **Pointer** for an unknown device. The device
+  picker prefixes each name with the matching two-letter code.
 
 ### Shared computers
 
@@ -427,7 +454,7 @@ released when the process exits.
 
 ```
 /run/omarchy-scrollmode/state        pointer | scroll | sniper
-/run/omarchy-scrollmode/status.json  devices, active id, hidden count, battery
+/run/omarchy-scrollmode/status.json  devices, kinds, active id, battery
 /run/omarchy-scrollmode/device       display name of the active device
 /run/omarchy-scrollmode/control.sock CLI control socket (0600, user-owned)
 

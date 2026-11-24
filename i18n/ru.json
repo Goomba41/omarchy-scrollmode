@@ -1,5 +1,4 @@
 {
-  "menu.title": "Трекбол",
   "menu.speed": "Скорость скролла",
   "menu.speedHint": "Больше — быстрее.",
   "menu.sniper": "Скорость sniper",
@@ -133,5 +132,10 @@
   "battery.state.invalid": "Неверная батарея",
   "battery.state.thermalError": "Перегрев",
   "battery.state.chargingError": "Ошибка зарядки",
-  "menu.buttons": "Кнопки и хоткеи"
+  "menu.buttons": "Кнопки и хоткеи",
+  "device.kind.trackball": "Трекбол",
+  "device.kind.mouse": "Мышь",
+  "device.kind.trackpad": "Тачпад",
+  "device.kind.tablet": "Планшет",
+  "device.kind.unknown": "Указатель"
 }

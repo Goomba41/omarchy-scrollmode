@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] — 2026-11-24
+
+### Added
+
+- Pointer classification with `kind`, two-letter `code`, `confidence`,
+  `sources` and `wireless` in `status.json`.
+- HID++ `0x0005` device type for Logitech (`3` mouse, `4` trackpad,
+  `5` trackball), plus udev `ID_INPUT_*` tags, name/model hints and an evdev
+  fallback for every other vendor.
+- The panel title follows the active device type; the device picker prefixes
+  names with `[TB]`, `[MS]`, `[TP]`, `[TA]` or `[UN]`.
+- The HID++ identity probe now prefers pointer types, so a paired keyboard
+  cannot win over a trackball on a multi-device receiver.
+
 ## [1.4.2] — 2026-11-24
 
 ### Fixed
