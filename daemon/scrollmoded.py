@@ -53,6 +53,7 @@ STATUS_PATH = os.path.join(RUNTIME_DIR, "status.json")
 SOCKET_PATH = os.path.join(RUNTIME_DIR, "control.sock")
 STATE_DIR = os.environ.get("SCROLLMODE_STATE_DIR", "/var/lib/omarchy-scrollmode")
 STATS_PATH = os.path.join(STATE_DIR, "stats.json")
+IDENTITY_PATH = os.path.join(STATE_DIR, "identity.json")
 LOCK_PATH = os.path.join(RUNTIME_DIR, "daemon.lock")
 
 HIDPP_SW_ID = 0x0A
@@ -1196,6 +1197,9 @@ class Daemon:
         self.button_hold: str | None = None
         self.device_name = ""
         self.hidpp_type = None
+        self.identity_ok = False
+        self.identity_generation = 0
+        self.last_identity_probe = 0.0
         self.active_id = ""
         self.last_scan = 0.0
         self.empty_scans = 0
@@ -1224,6 +1228,58 @@ class Daemon:
         self.lock_handle = None
 
     # -- lifecycle ---------------------------------------------------------
+
+    def logitech_receiver(self) -> bool:
+        name = getattr(self.dev, "name", "") or ""
+        return self.dev is not None and "logitech" in name.lower()
+
+    def load_identity(self) -> dict | None:
+        try:
+            with open(IDENTITY_PATH, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        devices = data.get("devices")
+        if isinstance(devices, dict):
+            entry = devices.get(self.active_id)
+        elif data.get("id") == self.active_id:
+            entry = data  # migrate the single-device cache
+        else:
+            entry = None
+        if not isinstance(entry, dict) or not entry.get("name"):
+            return None
+        return entry
+
+    def save_identity(self, device_id: str, raw: str, type_code) -> None:
+        if not device_id:
+            return
+        try:
+            os.makedirs(os.path.dirname(IDENTITY_PATH), mode=0o755, exist_ok=True)
+            devices = {}
+            try:
+                with open(IDENTITY_PATH, "r", encoding="utf-8") as handle:
+                    previous = json.load(handle)
+                if isinstance(previous, dict):
+                    if isinstance(previous.get("devices"), dict):
+                        devices = previous["devices"]
+                    elif previous.get("id") and previous.get("name"):
+                        devices[previous["id"]] = {
+                            "name": previous["name"],
+                            "type": previous.get("type"),
+                        }
+            except (OSError, ValueError):
+                devices = {}
+            devices[device_id] = {"name": raw, "type": type_code}
+            tmp = IDENTITY_PATH + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump({"devices": devices}, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+            os.replace(tmp, IDENTITY_PATH)
+            os.chmod(IDENTITY_PATH, 0o644)
+        except OSError as exc:
+            log(f"cannot write {IDENTITY_PATH}: {exc}")
 
     def prepare_runtime(self) -> None:
         os.makedirs(RUNTIME_DIR, mode=0o755, exist_ok=True)
@@ -1264,18 +1320,41 @@ class Daemon:
             log(f"cannot write {STATE_PATH}: {exc}")
 
     def probe_device_name(self, fallback: str) -> None:
+        if not self.logitech_receiver():
+            self.identity_ok = False
+            self.hidpp_type = None
+            self.device_name = fallback
+            self.write_device(self.device_name)
+            self.refresh_status(force=True)
+            return
+
+        device_id = self.active_id
+        generation = self.identity_generation
+
         def work() -> None:
+            previous_name = self.device_name
             try:
                 raw, type_code = hidpp_device_identity()
             except Exception as exc:  # never let the probe hurt the daemon
                 log(f"hidpp identity probe failed: {exc}")
                 raw, type_code = "", None
-            self.hidpp_type = type_code
-            self.device_name = friendly_device_name(raw) if raw else fallback
+            if generation != self.identity_generation or device_id != self.active_id:
+                log("identity probe result discarded for a previous device")
+                return
+            if raw:
+                self.hidpp_type = type_code
+                self.identity_ok = True
+                self.device_name = friendly_device_name(raw)
+                self.save_identity(device_id, raw, type_code)
+            else:
+                self.identity_ok = False
+                self.hidpp_type = self.hidpp_type if previous_name else None
+                self.device_name = previous_name or fallback
             self.write_device(self.device_name)
             self.refresh_status(force=True)
-            log(f"device name: {self.device_name} (type {type_code})")
+            log(f"device name: {self.device_name} (type {self.hidpp_type})")
 
+        self.last_identity_probe = time.monotonic()
         threading.Thread(target=work, name="hidpp-name", daemon=True).start()
 
     def write_device(self, name: str) -> None:
@@ -1663,6 +1742,16 @@ class Daemon:
             self.frame.append(event)
 
     def handle_frame(self, frame: list) -> None:
+        # HID++ often sleeps with the mouse. Retry when the device is clearly
+        # awake, but only for a Logitech receiver, and never more than once
+        # every few seconds.
+        if (
+            not self.identity_ok
+            and self.dev is not None
+            and self.logitech_receiver()
+            and time.monotonic() - self.last_identity_probe > 4.0
+        ):
+            self.probe_device_name(self.dev.name)
         self.record_raw_stats(frame)
         if self.mode not in ("scroll", "sniper") or self.ui is None:
             return
@@ -2154,13 +2243,30 @@ class Daemon:
                     self.dev = opened
                     announced_missing = False
                     self.active_id = target["id"]
+                    self.identity_generation += 1
                     self.seat = target.get("seat") or "seat0"
                     self.refresh_status(force=True)
-                    if self.device_name:
-                        self.write_device(self.device_name)
+                    if self.logitech_receiver():
+                        cached = self.load_identity()
                     else:
-                        self.write_device(self.dev.name)
+                        cached = None
+                    if cached:
+                        self.device_name = friendly_device_name(cached["name"])
+                        self.hidpp_type = cached.get("type")
+                        self.identity_ok = False
+                        self.write_device(self.device_name)
                         self.probe_device_name(self.dev.name)
+                    elif self.logitech_receiver():
+                        if self.device_name:
+                            self.write_device(self.device_name)
+                        else:
+                            self.write_device(self.dev.name)
+                            self.probe_device_name(self.dev.name)
+                    else:
+                        self.device_name = getattr(self.dev, "name", "") or self.active_id
+                        self.hidpp_type = None
+                        self.identity_ok = False
+                        self.write_device(self.device_name)
                     self.sel.register(self.dev.fd, selectors.EVENT_READ, "device")
                 try:
                     self.serve()
@@ -2231,6 +2337,11 @@ class Daemon:
             pass
         self.dev = None
         self.active_id = ""
+        self.device_name = ""
+        self.hidpp_type = None
+        self.identity_ok = False
+        self.identity_generation += 1
+        self.last_identity_probe = 0.0
         self.write_device("")
         self.refresh_status(force=True)
 

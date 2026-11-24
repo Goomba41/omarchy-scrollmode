@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.2] — 2026-11-24
+
+### Fixed
+
+- Removed the horizontal-scale sign clamp that made the slow cursor turn jump
+  when it crossed the edge-on angle. The perspective scale now passes smoothly
+  through zero, with a slightly thicker extrusion so the pointer still reads in
+  profile.
+- Brightened the extruded edge and added a faint bevel on its far side, and the
+  specular spot now fades out as the face turns away. The pointer no longer
+  flashes dark when it passes edge-on.
+- HID++ identity is cached per device and refreshed on input, so waking from
+  sleep no longer leaves a stale name or type on the receiver. The cache is only
+  read and written for Logitech receivers, and late probe results from a
+  previous device are discarded, so a non-Logitech mouse cannot pick up the
+  trackball's identity.
+
 ## [1.8.1] — 2026-11-24
 
 ### Changed

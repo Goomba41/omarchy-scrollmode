@@ -193,9 +193,11 @@ Item {
       var rad = cursor.angle * Math.PI / 180
       var ca = Math.cos(rad)
       var sa = Math.sin(rad)
-      // Keep a little width at the edge-on moment instead of blinking out.
-      var sx = (ca >= 0 ? 1 : -1) * Math.max(0.17, Math.abs(ca))
-      var depth = Math.max(1.2, w * 0.075) * sa
+      // A smooth perspective scale: no sign-clamp step at 90°. The extruded
+      // side faces keep the pointer visible while the front face is edge-on.
+      var sign = ca < 0 ? -1 : 1
+      var sx = sign * Math.pow(Math.abs(ca), 0.72)
+      var depth = Math.max(1.4, w * 0.085) * sa
 
       function project(p) {
         return [cx + (ox + p[0] * scale - cx) * sx, oy + p[1] * scale]
@@ -225,11 +227,11 @@ Item {
       for (var b = 1; b < back.length; b++)
         ctx.lineTo(back[b][0], back[b][1])
       ctx.closePath()
-      ctx.fillStyle = Qt.darker(cursor.color, 2.5)
-      ctx.globalAlpha = 0.92
+      ctx.fillStyle = Qt.darker(cursor.color, 2.25)
+      ctx.globalAlpha = 0.94
       ctx.fill()
 
-      ctx.fillStyle = Qt.darker(cursor.color, 2.15)
+      ctx.fillStyle = Qt.darker(cursor.color, 1.85)
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
         ctx.beginPath()
@@ -241,6 +243,17 @@ Item {
         ctx.fill()
       }
       ctx.globalAlpha = 1
+
+      // A faint bevel on the far edge keeps the extrusion from turning into a
+      // dark blink when the front face is exactly edge-on.
+      ctx.beginPath()
+      ctx.moveTo(back[0][0], back[0][1])
+      for (var bo = 1; bo < back.length; bo++)
+        ctx.lineTo(back[bo][0], back[bo][1])
+      ctx.closePath()
+      ctx.lineWidth = Math.max(1, w * 0.012)
+      ctx.strokeStyle = "rgba(255,255,255,0.16)"
+      ctx.stroke()
 
       // Front face. The gradient is projected with the face, so it turns with
       // the arrow instead of sitting in screen space.
@@ -268,10 +281,11 @@ Item {
       ctx.closePath()
       ctx.clip()
       var hp = project([7.5, 6.2])
+      var spotAmount = Math.pow(Math.max(0, ca), 0.7)
       var spot = ctx.createRadialGradient(hp[0], hp[1], 0,
         hp[0], hp[1], w * 0.20)
-      spot.addColorStop(0, "rgba(255,255,255,0.30)")
-      spot.addColorStop(0.45, "rgba(255,255,255,0.08)")
+      spot.addColorStop(0, "rgba(255,255,255," + (0.30 * spotAmount) + ")")
+      spot.addColorStop(0.45, "rgba(255,255,255," + (0.08 * spotAmount) + ")")
       spot.addColorStop(1, "rgba(255,255,255,0)")
       ctx.fillStyle = spot
       ctx.fillRect(0, 0, w, h)
