@@ -6,7 +6,7 @@ instead of moving the cursor; a bar widget shows the mode and opens the
 settings on a left click.
 
 <p align="center">
-  <img src="docs/menu.png" alt="Settings panel" width="340">
+  <img src="preview.png" alt="Trackball Scroll Mode" width="800">
 </p>
 
 ## Features
@@ -204,6 +204,12 @@ The panel exposes two controls when it is on:
 **Trigger** gates on the fastest moment of the flick, but the coast starts from
 the speed the ball had at release, so the hand-off does not jump back to the
 peak after the app has already animated a slower tail.
+
+### Stats
+
+<p align="center">
+  <img src="docs/stats.png" alt="Stats tab" width="340">
+</p>
 
 The **Stats** tab opens with three headline numbers: record speed, distance the
 ball rolled and ball turns. Below them, clearly separated sections cover totals,
