@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] — 2026-11-24
+
+### Fixed
+
+- Restored the Scroll-tab slider titles. Only the explanatory captions below
+  the sliders are hidden; the titles, help icons and values remain.
+- Slider titles now share the same body font size, width and elision behaviour
+  as the toggle labels, so field labels line up consistently.
+
 ## [1.4.1] — 2026-11-24
 
 ### Changed

@@ -1145,6 +1145,8 @@ Ui.Panel {
 
           SliderRow {
             visible: root.tab === 0
+            label: strings.t("menu.speed")
+            help: strings.t("help.speed")
             valueText: Math.round(sliderValue) + " %"
             from: 25
             to: 300
@@ -1164,6 +1166,8 @@ Ui.Panel {
 
           SliderRow {
             visible: root.tab === 0
+            label: strings.t("menu.sniper")
+            help: strings.t("help.sniperSpeed")
             valueText: Math.round(sliderValue) + " %"
             from: 5
             to: 100
@@ -2055,11 +2059,14 @@ Ui.Panel {
 
       Text {
         id: labelText
+        width: Math.max(0, row.width - valueLabel.implicitWidth - Style.space(8)
+          - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0))
         text: row.label
         textFormat: Text.PlainText
         color: Color.popups.text
         font.family: Style.font.family
         font.pixelSize: Style.font.body
+        elide: Text.ElideRight
       }
 
       HintIcon {
