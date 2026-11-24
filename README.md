@@ -163,9 +163,10 @@ vertical axis, so its texture slides across the sphere and vanishes behind it.
 Click it to give it a deliberate spin: the ball accelerates, then brakes back
 to the slow idle turn, with white air streaks while it is moving fast.
 
-For a mouse the header and bar icon switch to a top-down mouse glyph. It
-settles when the panel opens, breathes a soft sensor glow while idle, and
-presses its body / spins its wheel when clicked.
+For a mouse the header and bar icon switch to a top-down glyph inspired by
+the Logitech Signature M650. It glides in when the panel opens, drifts slowly
+while idle, and presses its body, spins its wheel and sends small sound-wave
+arcs from the left button when clicked.
 
 <p align="center">
   <img src="docs/icons.png" alt="pointer, scroll and sniper balls" width="120">

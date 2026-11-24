@@ -106,8 +106,8 @@ Item {
     }
   }
 
-  // Air streaks live outside the sphere, so this canvas is larger than the
-  // ball. It is only painted while the ball is moving above the threshold.
+  // Horizontal air streaks across the front of the sphere. They sit above the
+  // ball so they read as air passing in front of it, not as a rim around it.
   Canvas {
     id: airflow
     x: -ball.airMargin
@@ -116,27 +116,54 @@ Item {
     height: width
     visible: !Style.reduceMotion && ball.airAmount > 0
     antialiasing: true
-    z: 0
+    z: 3
 
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
       var w = width
       var h = height
-      var cx = w / 2
-      var cy = h / 2
-      var r = ball.size / 2 + ball.airMargin * 0.25
       var amount = ball.airAmount
       if (amount <= 0) return
+      var phase = (ball.angle * 0.12) % Math.max(4, ball.size * 0.20)
       ctx.lineCap = "round"
-      for (var i = 0; i < 5; i++) {
-        var angle = (i * 72 + ball.angle * 0.32) * Math.PI / 180
-        var span = (0.10 + amount * 0.22) * Math.PI
+
+      // Three horizontal streams across the front, gently curved so they read
+      // as air wrapping around the sphere.
+      for (var i = 0; i < 3; i++) {
+        var y = h * (0.55 + i * 0.10)
+        var alpha = (0.10 + amount * 0.34) * (1 - i * 0.14)
+        var start = -ball.airMargin * 0.4 + (i % 2 ? -phase : phase)
+        var end = w + ball.airMargin * 0.4 - (i % 2 ? phase : -phase)
+        var bend = (i % 2 ? -1 : 1) * h * 0.018
+        var grad = ctx.createLinearGradient(start, y, end, y)
+        grad.addColorStop(0, "rgba(255,255,255,0)")
+        grad.addColorStop(0.12, "rgba(255,255,255," + alpha + ")")
+        grad.addColorStop(0.62, "rgba(255,255,255," + alpha + ")")
+        grad.addColorStop(1, "rgba(255,255,255,0)")
         ctx.beginPath()
-        ctx.arc(cx, cy, r + (i % 2) * ball.airMargin * 0.25,
-          angle, angle + span)
-        ctx.strokeStyle = "rgba(255,255,255," + (0.08 + amount * 0.38) + ")"
-        ctx.lineWidth = Math.max(1, ball.size * (0.025 + amount * 0.025))
+        ctx.moveTo(start, y)
+        ctx.quadraticCurveTo((start + end) / 2, y + bend, end, y)
+        ctx.strokeStyle = grad
+        ctx.lineWidth = Math.max(1, ball.size * (0.017 + amount * 0.022))
+        ctx.stroke()
+      }
+
+      // Two short side wisps entering from behind the ball.
+      for (var j = 0; j < 2; j++) {
+        var sy = h * (0.36 + j * 0.16)
+        var dir = j === 0 ? 1 : -1
+        var sx = dir > 0 ? -ball.airMargin * 0.4 : w + ball.airMargin * 0.4
+        var ex = dir > 0 ? w * 0.24 : w * 0.76
+        var side = ctx.createLinearGradient(sx, sy, ex, sy)
+        side.addColorStop(0, "rgba(255,255,255,0)")
+        side.addColorStop(0.45, "rgba(255,255,255," + (0.06 + amount * 0.24) + ")")
+        side.addColorStop(1, "rgba(255,255,255,0)")
+        ctx.beginPath()
+        ctx.moveTo(sx, sy)
+        ctx.quadraticCurveTo((sx + ex) / 2, sy + dir * h * 0.025, ex, sy)
+        ctx.strokeStyle = side
+        ctx.lineWidth = Math.max(1, ball.size * 0.014)
         ctx.stroke()
       }
     }

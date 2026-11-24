@@ -1,9 +1,10 @@
 import QtQuick
 import qs.Commons
 
-// A drawn top-down mouse: neutral shell, split buttons, a mode-coloured wheel
-// and side button. Opening produces a small settle and wheel turn; idle keeps
-// a slow sensor glow. kick() presses the body and spins the wheel.
+// A drawn top-down mouse inspired by the Logitech Signature M650: a softly
+// tapered shell, split buttons, a dark rubber wheel with a metal rim, and two
+// side buttons. It glides gently while idle, settles on open, and clicks with
+// small sound-wave arcs from the left button.
 Item {
   id: mouse
 
@@ -13,32 +14,45 @@ Item {
   property bool shadow: false
 
   property real openScale: 1
-  property real openOffset: 0
+  property real openOffsetX: 0
+  property real openOffsetY: 0
+  property real openOpacity: 1
   property real wheelAngle: 0
-  property real glow: 0.18
   property real press: 0
+  property real clickPulse: 1
+  property real idlePhase: 0
 
   implicitWidth: size
   implicitHeight: size
   width: size
   height: size
-  scale: openScale
-  y: openOffset + press * 0.8
+  scale: openScale * (1 - press * 0.026)
+  x: openOffsetX + Math.sin(idlePhase) * size * 0.060
+  y: openOffsetY + press * 2.2 + Math.sin(idlePhase * 0.8) * size * 0.030
+  rotation: opened && !Style.reduceMotion ? Math.sin(idlePhase * 0.65) * 1.6 : 0
+  opacity: openOpacity
   transformOrigin: Item.Center
 
   onOpenedChanged: {
     if (opened && !Style.reduceMotion) {
       openAnim.restart()
       openWheel.restart()
-      idleGlow.restart()
+      idleAnim.restart()
     } else {
       openAnim.stop()
       openWheel.stop()
-      idleGlow.stop()
+      idleAnim.stop()
+      pressAnim.stop()
+      wheelKick.stop()
+      clickWave.stop()
       openScale = 1
-      openOffset = 0
+      openOffsetX = 0
+      openOffsetY = 0
+      openOpacity = 1
       wheelAngle = 0
-      glow = 0.18
+      press = 0
+      clickPulse = 1
+      idlePhase = 0
     }
   }
 
@@ -46,27 +60,45 @@ Item {
     if (Style.reduceMotion) return
     pressAnim.restart()
     wheelKick.from = mouse.wheelAngle
-    wheelKick.to = mouse.wheelAngle + 360
+    wheelKick.to = mouse.wheelAngle + 540
     wheelKick.restart()
+    clickWave.restart()
   }
 
-  SequentialAnimation {
+  ParallelAnimation {
     id: openAnim
     running: false
 
     NumberAnimation {
       target: mouse
       property: "openScale"
-      from: 1.06
+      from: 0.88
       to: 1
-      duration: 320
+      duration: 420
       easing.type: Easing.OutBack
+      easing.overshoot: 1.5
     }
     NumberAnimation {
       target: mouse
-      property: "openOffset"
-      from: 1
+      property: "openOffsetX"
+      from: 3.5
       to: 0
+      duration: 420
+      easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+      target: mouse
+      property: "openOffsetY"
+      from: 3.5
+      to: 0
+      duration: 400
+      easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+      target: mouse
+      property: "openOpacity"
+      from: 0.22
+      to: 1
       duration: 260
       easing.type: Easing.OutCubic
     }
@@ -77,9 +109,20 @@ Item {
     target: mouse
     property: "wheelAngle"
     from: 0
-    to: 90
-    duration: 360
+    to: 135
+    duration: 430
     easing.type: Easing.OutCubic
+  }
+
+  NumberAnimation {
+    id: idleAnim
+    target: mouse
+    property: "idlePhase"
+    from: 0
+    to: Math.PI * 2
+    duration: 6000
+    loops: Animation.Infinite
+    running: false
   }
 
   SequentialAnimation {
@@ -91,14 +134,14 @@ Item {
       property: "press"
       from: 0
       to: 1
-      duration: 70
+      duration: 65
     }
     NumberAnimation {
       target: mouse
       property: "press"
       from: 1
       to: 0
-      duration: 180
+      duration: 210
       easing.type: Easing.OutCubic
     }
   }
@@ -107,31 +150,18 @@ Item {
     id: wheelKick
     target: mouse
     property: "wheelAngle"
-    duration: 640
+    duration: 680
     easing.type: Easing.OutCubic
   }
 
-  SequentialAnimation {
-    id: idleGlow
-    loops: Animation.Infinite
-    running: false
-
-    NumberAnimation {
-      target: mouse
-      property: "glow"
-      from: 0.18
-      to: 0.42
-      duration: 1800
-      easing.type: Easing.InOutSine
-    }
-    NumberAnimation {
-      target: mouse
-      property: "glow"
-      from: 0.42
-      to: 0.18
-      duration: 1800
-      easing.type: Easing.InOutSine
-    }
+  NumberAnimation {
+    id: clickWave
+    target: mouse
+    property: "clickPulse"
+    from: 0
+    to: 1
+    duration: 650
+    easing.type: Easing.OutCubic
   }
 
   Canvas {
@@ -154,115 +184,147 @@ Item {
       var h = height
       if (w <= 0 || h <= 0) return
       var cx = w / 2
-      var bodyWidth = w * 0.64
+      var half = w * 0.335
       var top = h * 0.035
-      var bottom = h * 0.97
-      var half = bodyWidth / 2
+      var bottom = h * 0.965
       var base = Qt.rgba(Color.popups.text.r, Color.popups.text.g,
-        Color.popups.text.b, 0.90)
+        Color.popups.text.b, 0.92)
 
       if (mouse.shadow) {
         var shadow = ctx.createRadialGradient(
-          cx + w * 0.035, bottom - h * 0.01, 0,
-          cx + w * 0.035, bottom - h * 0.01, w * 0.40)
+          cx + w * 0.035, bottom - h * 0.005, 0,
+          cx + w * 0.035, bottom - h * 0.005, w * 0.44)
         shadow.addColorStop(0, "rgba(0,0,0,0.38)")
         shadow.addColorStop(0.55, "rgba(0,0,0,0.18)")
         shadow.addColorStop(1, "rgba(0,0,0,0)")
         ctx.fillStyle = shadow
-        oval(cx + w * 0.035, bottom - h * 0.005, w * 0.42, h * 0.08)
+        oval(cx + w * 0.035, bottom - h * 0.005, w * 0.46, h * 0.085)
         ctx.fill()
       }
 
-      // Tapered shell: wide shoulders, narrower tail.
+      // Signature-style shell: broad shoulders, a gentle waist and a rounded
+      // tail, rather than a plain ellipse.
       var shell = ctx.createLinearGradient(cx - half, top, cx + half, bottom)
-      shell.addColorStop(0, Qt.lighter(base, 1.55))
-      shell.addColorStop(0.42, base)
-      shell.addColorStop(1, Qt.darker(base, 1.65))
+      shell.addColorStop(0, Qt.lighter(base, 1.42))
+      shell.addColorStop(0.32, Qt.lighter(base, 1.12))
+      shell.addColorStop(0.64, base)
+      shell.addColorStop(1, Qt.darker(base, 1.58))
       ctx.beginPath()
       ctx.moveTo(cx, top)
-      ctx.bezierCurveTo(cx + half * 0.92, top,
-        cx + half, h * 0.30,
-        cx + half * 0.86, h * 0.62)
-      ctx.bezierCurveTo(cx + half * 0.74, h * 0.90,
-        cx + half * 0.34, bottom,
-        cx, bottom)
-      ctx.bezierCurveTo(cx - half * 0.34, bottom,
-        cx - half * 0.74, h * 0.90,
-        cx - half * 0.86, h * 0.62)
-      ctx.bezierCurveTo(cx - half, h * 0.30,
-        cx - half * 0.92, top,
+      ctx.bezierCurveTo(cx + half * 0.76, top,
+        cx + half * 1.02, h * 0.17,
+        cx + half * 0.98, h * 0.40)
+      ctx.bezierCurveTo(cx + half * 0.95, h * 0.66,
+        cx + half * 0.72, h * 0.88,
+        cx + half * 0.38, bottom)
+      ctx.bezierCurveTo(cx + half * 0.16, bottom + h * 0.012,
+        cx - half * 0.16, bottom + h * 0.012,
+        cx - half * 0.38, bottom)
+      ctx.bezierCurveTo(cx - half * 0.72, h * 0.88,
+        cx - half * 0.95, h * 0.66,
+        cx - half * 0.98, h * 0.40)
+      ctx.bezierCurveTo(cx - half * 1.02, h * 0.17,
+        cx - half * 0.76, top,
         cx, top)
       ctx.closePath()
       ctx.fillStyle = shell
       ctx.fill()
-      ctx.lineWidth = Math.max(1, w * 0.018)
-      ctx.strokeStyle = Qt.darker(base, 2.2)
-      ctx.globalAlpha = 0.45
+      ctx.lineWidth = Math.max(1, w * 0.016)
+      ctx.strokeStyle = Qt.darker(base, 2.1)
+      ctx.globalAlpha = 0.48
       ctx.stroke()
       ctx.globalAlpha = 1
 
-      // Button seam and the horizontal button edge.
+      // Two click panels: a centre seam and a shallow curved split.
       ctx.beginPath()
-      ctx.moveTo(cx, top + h * 0.015)
-      ctx.lineTo(cx, h * 0.43)
-      ctx.strokeStyle = Qt.darker(base, 1.8)
-      ctx.lineWidth = Math.max(1, w * 0.015)
-      ctx.globalAlpha = 0.5
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.moveTo(cx - half * 0.82, h * 0.205)
-      ctx.lineTo(cx + half * 0.82, h * 0.205)
-      ctx.stroke()
-      ctx.globalAlpha = 1
-
-      // Side button, tinted with the mode colour.
-      oval(cx - half * 0.87, h * 0.51, w * 0.045, h * 0.075)
-      ctx.fillStyle = Qt.rgba(mouse.color.r, mouse.color.g, mouse.color.b, 0.34)
-      ctx.fill()
-      ctx.strokeStyle = Qt.darker(base, 1.9)
+      ctx.moveTo(cx, top + h * 0.012)
+      ctx.lineTo(cx, h * 0.385)
+      ctx.strokeStyle = Qt.darker(base, 1.65)
       ctx.lineWidth = Math.max(1, w * 0.012)
-      ctx.globalAlpha = 0.6
+      ctx.globalAlpha = 0.52
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.moveTo(cx - half * 0.86, h * 0.185)
+      ctx.quadraticCurveTo(cx, h * 0.31, cx + half * 0.86, h * 0.185)
       ctx.stroke()
       ctx.globalAlpha = 1
 
-      // Scroll wheel: a small mode-coloured disc with one moving notch.
-      var wheelY = h * 0.275
-      var wheelR = Math.max(1.2, w * 0.072)
+      // Side buttons on the left edge.
+      for (var i = 0; i < 2; i++) {
+        var sy = h * (0.47 + i * 0.105)
+        oval(cx - half * 0.92, sy, w * 0.050, h * 0.043)
+        ctx.fillStyle = Qt.rgba(mouse.color.r, mouse.color.g, mouse.color.b, 0.28)
+        ctx.fill()
+        ctx.strokeStyle = Qt.darker(base, 1.9)
+        ctx.lineWidth = Math.max(1, w * 0.011)
+        ctx.globalAlpha = 0.65
+        ctx.stroke()
+        ctx.globalAlpha = 1
+      }
+
+      // Scroll wheel: a dark rubber capsule with a metal rim and moving ridges.
+      var wheelW = w * 0.105
+      var wheelH = h * 0.205
+      var wheelX = cx - wheelW / 2
+      var wheelY = h * 0.115
+      var wheelR = wheelW / 2
       ctx.beginPath()
-      ctx.arc(cx, wheelY, wheelR, 0, Math.PI * 2)
-      ctx.fillStyle = Qt.rgba(mouse.color.r, mouse.color.g, mouse.color.b, 0.88)
+      ctx.moveTo(wheelX + wheelR, wheelY)
+      ctx.lineTo(wheelX + wheelW - wheelR, wheelY)
+      ctx.quadraticCurveTo(wheelX + wheelW, wheelY,
+        wheelX + wheelW, wheelY + wheelR)
+      ctx.lineTo(wheelX + wheelW, wheelY + wheelH - wheelR)
+      ctx.quadraticCurveTo(wheelX + wheelW, wheelY + wheelH,
+        wheelX + wheelW - wheelR, wheelY + wheelH)
+      ctx.lineTo(wheelX + wheelR, wheelY + wheelH)
+      ctx.quadraticCurveTo(wheelX, wheelY + wheelH,
+        wheelX, wheelY + wheelH - wheelR)
+      ctx.lineTo(wheelX, wheelY + wheelR)
+      ctx.quadraticCurveTo(wheelX, wheelY,
+        wheelX + wheelR, wheelY)
+      ctx.closePath()
+      ctx.fillStyle = "rgba(24,25,27,0.96)"
       ctx.fill()
-      ctx.strokeStyle = Qt.darker(base, 2.0)
       ctx.lineWidth = Math.max(1, w * 0.014)
+      ctx.strokeStyle = Qt.lighter(base, 1.25)
+      ctx.globalAlpha = 0.62
       ctx.stroke()
+      ctx.globalAlpha = 1
 
       ctx.save()
-      ctx.translate(cx, wheelY)
-      ctx.rotate(mouse.wheelAngle * Math.PI / 180)
       ctx.beginPath()
-      ctx.moveTo(0, -wheelR * 0.72)
-      ctx.lineTo(0, wheelR * 0.28)
-      ctx.strokeStyle = Qt.darker(mouse.color, 2.0)
-      ctx.lineWidth = Math.max(1, w * 0.018)
-      ctx.stroke()
+      ctx.rect(wheelX + 1, wheelY + 2, wheelW - 2, wheelH - 4)
+      ctx.clip()
+      var gap = wheelH / 5
+      var ridge = (mouse.wheelAngle / 360) * gap
+      for (var r = -1; r < 7; r++) {
+        var ry = wheelY + r * gap + ridge
+        if (ry < wheelY + 1 || ry > wheelY + wheelH - 1) continue
+        ctx.beginPath()
+        ctx.moveTo(wheelX + 1, ry)
+        ctx.lineTo(wheelX + wheelW - 1, ry)
+        ctx.strokeStyle = "rgba(220,220,220,0.30)"
+        ctx.lineWidth = Math.max(0.6, h * 0.012)
+        ctx.stroke()
+      }
       ctx.restore()
 
-      // Soft sensor light at the tail; the only idle motion.
-      var light = ctx.createRadialGradient(
-        cx, h * 0.84, 0, cx, h * 0.84, w * 0.20)
-      light.addColorStop(0, Qt.rgba(mouse.color.r, mouse.color.g,
-        mouse.color.b, mouse.glow))
-      light.addColorStop(1, Qt.rgba(mouse.color.r, mouse.color.g,
-        mouse.color.b, 0))
-      ctx.fillStyle = light
-      oval(cx, h * 0.84, w * 0.18, h * 0.055)
+      // A small mode-coloured ring at the base of the wheel.
+      ctx.beginPath()
+      ctx.arc(cx, wheelY + wheelH + h * 0.018, w * 0.018, 0, Math.PI * 2)
+      ctx.fillStyle = Qt.rgba(mouse.color.r, mouse.color.g, mouse.color.b, 0.7)
       ctx.fill()
 
-      // A quiet top-left highlight so the shell reads as a solid object.
+      // Quiet sensor dot at the tail.
+      oval(cx, h * 0.82, w * 0.045, h * 0.018)
+      ctx.fillStyle = Qt.rgba(mouse.color.r, mouse.color.g, mouse.color.b, 0.28)
+      ctx.fill()
+
+      // Top-left shell highlight.
       var highlight = ctx.createRadialGradient(
-        cx - w * 0.12, h * 0.16, 0,
-        cx - w * 0.12, h * 0.16, w * 0.24)
-      highlight.addColorStop(0, "rgba(255,255,255,0.22)")
+        cx - w * 0.14, h * 0.16, 0,
+        cx - w * 0.14, h * 0.16, w * 0.26)
+      highlight.addColorStop(0, "rgba(255,255,255,0.24)")
       highlight.addColorStop(1, "rgba(255,255,255,0)")
       ctx.fillStyle = highlight
       ctx.fillRect(0, 0, w, h)
@@ -271,9 +333,53 @@ Item {
     Connections {
       target: mouse
       function onWheelAngleChanged() { bodyCanvas.requestPaint() }
-      function onGlowChanged() { bodyCanvas.requestPaint() }
+      function onClickPulseChanged() { bodyCanvas.requestPaint() }
       function onColorChanged() { bodyCanvas.requestPaint() }
       function onShadowChanged() { bodyCanvas.requestPaint() }
+    }
+    onWidthChanged: requestPaint()
+    onHeightChanged: requestPaint()
+  }
+
+  // Sound waves get their own larger canvas so they can leave the mouse body
+  // and remain visible beside the cursor.
+  Canvas {
+    id: clickCanvas
+    property real margin: mouse.size * 0.22
+    x: -margin
+    y: -margin
+    width: mouse.size + margin * 2
+    height: width
+    visible: !Style.reduceMotion && mouse.clickPulse < 1
+    antialiasing: true
+    z: 3
+
+    onPaint: {
+      var ctx = getContext("2d")
+      ctx.reset()
+      var w = width
+      var h = height
+      var margin = width - mouse.size
+      margin /= 2
+      var cx = margin + mouse.size / 2
+      var bx = cx - mouse.size * 0.335 * 0.40
+      var by = margin + mouse.size * 0.265
+      for (var k = 0; k < 3; k++) {
+        var p = Math.min(1, mouse.clickPulse + k * 0.12)
+        var radius = mouse.size * (0.10 + p * 0.42)
+        ctx.beginPath()
+        ctx.arc(bx, by, radius, -Math.PI * 0.75, Math.PI * 0.75)
+        ctx.strokeStyle = Qt.rgba(mouse.color.r, mouse.color.g,
+          mouse.color.b, (1 - p) * 0.55)
+        ctx.lineWidth = Math.max(1, mouse.size * 0.032)
+        ctx.stroke()
+      }
+    }
+
+    Connections {
+      target: mouse
+      function onClickPulseChanged() { clickCanvas.requestPaint() }
+      function onColorChanged() { clickCanvas.requestPaint() }
     }
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()

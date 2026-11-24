@@ -35,7 +35,8 @@ Item {
   Component {
     id: mouseComponent
     MouseGlyph {
-      anchors.fill: parent
+      width: root.size
+      height: root.size
       size: root.size
       color: root.color
       opened: root.opened

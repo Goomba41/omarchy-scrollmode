@@ -4,13 +4,28 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.7.1] — 2026-11-24
+
+### Changed
+
+- Redrew the mouse glyph around the Logitech Signature M650 proportions: a
+  tapered shell, split click panels, a dark rubber wheel with a metal rim and
+  moving ridges, and two side buttons.
+- Air streaks now run horizontally across the front of the trackball, with
+  short side wisps, instead of tracing the outer rim.
+- Made the mouse opening, idle and click animations more visible: a larger
+  settle, a slow gentle drift while idle, a stronger press, a longer wheel
+  spin and larger sound-wave arcs from the left button.
+
 ## [1.7.0] — 2026-11-24
 
 ### Added
 
-- A top-down mouse glyph for mouse devices, with split buttons, a
-  mode-coloured wheel and side button. It has an opening settle, a slow idle
-  sensor glow, and a click animation that presses the body and spins the wheel.
+- A top-down mouse glyph for mouse devices, inspired by the Logitech Signature
+  M650, with split buttons, a dark rubber wheel with a metal rim, and side
+  buttons. It has an opening glide/settle, a slow idle drift, and a click
+  animation that presses the body, spins the wheel and sends small sound-wave
+  arcs from the left button.
 - A `DeviceIcon` selector used by both the bar and the panel header; future
   trackpad and unknown glyphs can plug in here.
 - Clicking the trackball in the panel header kicks it into a deliberate
