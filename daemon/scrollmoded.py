@@ -840,7 +840,6 @@ class Daemon:
         self.button_hold: str | None = None
         self.device_name = ""
         self.active_id = ""
-        self.last_status = ""
         self.last_scan = 0.0
         self.empty_scans = 0
         self.seat = "seat0"
@@ -984,9 +983,16 @@ class Daemon:
             "learnError": self.learn_error,
         }
         text = json.dumps(status, ensure_ascii=False)
-        if text == self.last_status:
-            return
-        self.last_status = text
+        # Compare with the file instead of an in-memory cache: a restarting
+        # daemon can overwrite status.json after the new one has written it,
+        # and a cached "already written" flag would leave the panel showing
+        # "no device" until the next manual restart.
+        try:
+            with open(STATUS_PATH, "r", encoding="utf-8") as handle:
+                if handle.read() == text + "\n":
+                    return
+        except OSError:
+            pass
         try:
             with open(STATUS_PATH, "w", encoding="utf-8") as handle:
                 handle.write(text + "\n")

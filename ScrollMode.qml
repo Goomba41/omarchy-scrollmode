@@ -171,11 +171,18 @@ Ui.Panel {
     return Number(km) * 1000 / root.ballCircumference
   }
 
+  function statCompleted(turns, target) {
+    var value = Number(turns)
+    var goal = Number(target)
+    if (!(value > 0) || !(goal > 0)) return 0
+    return Math.floor(value / goal + 1e-12)
+  }
+
   function statProgressPercent(turns, target) {
     var value = Number(turns)
     var goal = Number(target)
     if (!(value > 0) || !(goal > 0)) return "0 %"
-    var percent = value / goal * 100
+    var percent = (value / goal * 100) % 100
     var digits = percent >= 1 ? 2 : percent >= 0.01 ? 4
       : percent >= 0.0001 ? 6 : percent >= 0.000001 ? 8 : 10
     var text = percent.toFixed(digits)
@@ -183,6 +190,12 @@ Ui.Panel {
       text = text.replace(/0+$/, "").replace(/\.$/, "")
     }
     return text + " %"
+  }
+
+  function cosmicProgress(turns, targetKm) {
+    var target = root.statTurnsFor(targetKm)
+    return statProgressPercent(turns, target)
+      + " (" + fmtNumber(statCompleted(turns, target), 0) + ")"
   }
 
   function fmtMultiple(value) {
@@ -852,11 +865,6 @@ Ui.Panel {
                 }
               }
 
-              Ui.PanelSeparator {
-                visible: root.statFlicks > 0
-                width: parent.width
-              }
-
               Column {
                 visible: root.statFlicks > 0
                 width: parent.width
@@ -906,16 +914,16 @@ Ui.Panel {
 
                 StatHeader { text: strings.t("stats.sectionFun") }
                 StatRow {
-                  label: strings.t("stats.cars")
-                  value: root.fmtMultiple(root.statKm * 1000 / 4.5)
+                  label: strings.t("stats.buses")
+                  value: root.fmtMultiple(root.statKm * 1000 / 12)
                 }
                 StatRow {
                   label: strings.t("stats.footballFields")
                   value: root.fmtMultiple(root.statKm * 1000 / 105)
                 }
                 StatRow {
-                  label: strings.t("stats.tenKRuns")
-                  value: root.fmtMultiple(root.statKm / 10)
+                  label: strings.t("stats.trackLaps")
+                  value: root.fmtMultiple(root.statKm * 1000 / 400)
                 }
                 StatRow {
                   label: strings.t("stats.marathons")
@@ -925,19 +933,19 @@ Ui.Panel {
                   label: strings.t("stats.earth")
                   done: root.fmtDistance(root.statKm) + " of "
                     + root.fmtNumber(40075, 0) + " km"
-                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(40075))
+                  progress: root.cosmicProgress(root.statTurns, 40075)
                 }
                 CosmicRow {
                   label: strings.t("stats.moon")
                   done: root.fmtDistance(root.statKm) + " of "
                     + root.fmtNumber(384400, 0) + " km"
-                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(384400))
+                  progress: root.cosmicProgress(root.statTurns, 384400)
                 }
                 CosmicRow {
                   label: strings.t("stats.sun")
                   done: root.fmtDistance(root.statKm) + " of "
                     + root.fmtNumber(940000000, 0) + " km"
-                  progress: root.statProgressPercent(root.statTurns, root.statTurnsFor(940000000))
+                  progress: root.cosmicProgress(root.statTurns, 940000000)
                 }
               }
 

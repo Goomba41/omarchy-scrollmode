@@ -32,7 +32,7 @@ settings on a left click.
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
 - **Stats tab**: headline speed, distance and ball turns, longest coast, daily
-  distance, and a distance ladder from car lengths to the Sun.
+  distance, and a distance ladder from bus lengths to the Sun.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -207,10 +207,11 @@ peak after the app has already animated a slower tail.
 
 The **Stats** tab opens with three headline numbers: record speed, distance the
 ball rolled and ball turns. Below them, clearly separated sections cover totals,
-flick records, days, and a distance ladder that climbs from car lengths and
-football fields through 10K runs and marathons to a lap around the Earth, a trip
-to the Moon and an orbit around the Sun. Counts use enough decimal places to
-move on a normal day of rolling, and the big targets also show a percentage.
+flick records, days, and a distance ladder that climbs from bus lengths and
+football fields through track laps and marathons to a lap around the Earth, a
+trip to the Moon and an orbit around the Sun. Counts use enough decimal places
+to move on a normal day of rolling. The big targets show progress toward the
+current lap, trip or orbit, with the number already completed in brackets.
 
 It collects automatically and is stored in
 `/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor

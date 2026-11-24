@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.3.5] — 2026-11-24
+
+### Changed
+
+- Comparison percentages reset at 100 %, and the number of completed laps,
+  trips or orbits is shown in brackets next to the progress.
+- Replaced car lengths and 10K runs with bus lengths and running-track laps.
+- Removed the extra divider between the headline numbers and the Totals
+  section; the section heading already separates them.
+
+### Fixed
+
+- `status.json` is now compared with the file on disk instead of an in-memory
+  cache. A service restart can no longer leave the panel showing "No pointing
+  device" until another manual restart.
+
 ## [1.3.4] — 2026-11-24
 
 ### Changed

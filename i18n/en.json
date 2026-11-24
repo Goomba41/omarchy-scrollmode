@@ -101,7 +101,7 @@
   "stats.today": "Today",
   "stats.bestDay": "Best day",
   "stats.activeDays": "Active days",
-  "stats.note": "Estimates: 34 mm ball, about 1,600 counts per turn, ~20 notches per page. Counts show how many of each; % is progress to the target.",
+  "stats.note": "Estimates: 34 mm ball, ~1,600 counts/turn, ~20 notches/page. Counts are multiples; % is progress; the number in brackets is completed laps, trips or orbits.",
   "stats.up": "Up",
   "stats.down": "Down",
   "stats.left": "Left",
@@ -109,8 +109,8 @@
   "stats.notchesUnit": "notches",
   "stats.msUnit": "ms",
   "stats.sectionTotals": "Totals",
-  "stats.cars": "Car lengths",
   "stats.footballFields": "Football fields",
-  "stats.tenKRuns": "10K runs",
-  "stats.marathons": "Marathons"
+  "stats.marathons": "Marathons",
+  "stats.buses": "Buses",
+  "stats.trackLaps": "Track laps"
 }
