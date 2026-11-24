@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.4.1] — 2026-11-24
+
+### Changed
+
+- The Scroll tab's two speed sliders no longer carry labels or hint lines,
+  leaving a cleaner slider-and-value layout.
+- The battery ring on the bar ball is larger and sits further into the
+  bottom-right corner.
+- The Device tab separates the sniper-button and hotkey controls under a
+  **Buttons & hotkeys** band, like the battery block.
+- Battery UI is shown only when the active device is wireless and reports a
+  battery; wired devices and mice without a battery hide the bar ring, header
+  badge and Device battery section.
+
 ## [1.4.0] — 2026-11-24
 
 ### Added

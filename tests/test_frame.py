@@ -323,6 +323,9 @@ def main():
     assert battery["available"] is True, battery
     assert battery["percent"] == 95 and battery["level"] == "full", battery
     assert battery["state"] == "discharging" and battery["charging"] is False, battery
+    assert battery["wireless"] is False, battery
+    wireless = scrollmoded.parse_battery(bytes([0x0F, 0x02]), bytes([95, 8, 0]), True)
+    assert wireless["wireless"] is True, wireless
     charging = scrollmoded.parse_battery(bytes([0x0F, 0x00]), bytes([0, 4, 1]))
     assert charging["percent"] is None and charging["charging"] is True, charging
     assert scrollmoded.parse_battery(b"", b"")["available"] is False

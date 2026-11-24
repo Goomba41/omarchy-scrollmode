@@ -33,10 +33,10 @@ settings on a left click.
   sniper button, hold threshold, auto-exit, reset, open config.
 - **Stats tab**: headline speed, distance and ball turns, longest coast, daily
   distance, and a distance ladder from bus lengths to the Sun.
-- **Battery**: a small charge ring on the bar ball, a battery badge in the
-  panel header, and charge settings in the Device tab. Reads Logitech HID++
-  battery data, keeps the last known value while the mouse sleeps, and never
-  writes to the device.
+- **Battery**: for wireless mice that report a battery, a small charge ring on
+  the bar ball, a battery badge in the panel header, and charge settings in the
+  Device tab. Reads Logitech HID++ battery data, keeps the last known value
+  while the mouse sleeps, and never writes to the device.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
@@ -224,10 +224,12 @@ The **Device** tab repeats the charge, its state and a thin gauge, then offers:
 - **Check every** — how often the daemon asks the mouse for its battery
   (1, 5, 15 or 30 minutes). Plugging in updates it immediately.
 
-Battery is read over Logitech HID++ `0x1004` (unified battery). When the mouse
-is asleep or the receiver is busy the last known value is kept and marked
-"last known" rather than disappearing. The daemon never writes battery
-settings to the device.
+Battery is read over Logitech HID++ `0x1004` (unified battery). The battery
+badge, bar ring and Device section appear only when the active device is
+wireless and reports a battery; wired mice and mice without a battery hide
+them entirely. When the mouse is asleep or the receiver is busy the last known
+value is kept and marked "last known" rather than disappearing. The daemon
+never writes battery settings to the device.
 
 ### Stats
 

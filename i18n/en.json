@@ -132,5 +132,6 @@
   "battery.state.slowCharging": "Slow charging",
   "battery.state.invalid": "Invalid battery",
   "battery.state.thermalError": "Thermal error",
-  "battery.state.chargingError": "Charging error"
+  "battery.state.chargingError": "Charging error",
+  "menu.buttons": "Buttons & hotkeys"
 }

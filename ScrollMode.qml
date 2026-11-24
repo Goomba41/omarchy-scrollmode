@@ -52,7 +52,9 @@ Ui.Panel {
         width: root.batteryDotSize
         height: width
         anchors.right: parent.right
+        anchors.rightMargin: -3
         anchors.bottom: parent.bottom
+        anchors.bottomMargin: -3
         antialiasing: true
         opacity: root.batteryStale ? 0.65 : 1
 
@@ -134,8 +136,9 @@ Ui.Panel {
 
   readonly property var batteryInfo: (status && status.battery && typeof status.battery === "object")
     ? status.battery : ({})
+  readonly property bool batteryWireless: !!(batteryInfo && batteryInfo.wireless === true)
   readonly property bool batteryAvailable: root.present
-    && !!(batteryInfo && batteryInfo.available === true)
+    && root.batteryWireless && !!(batteryInfo && batteryInfo.available === true)
   readonly property int batteryPercent: batteryAvailable
     && batteryInfo.percent !== null && batteryInfo.percent !== undefined
     ? Math.max(0, Math.min(100, Number(batteryInfo.percent))) : -1
@@ -147,7 +150,7 @@ Ui.Panel {
   readonly property bool batteryStale: !!(batteryInfo && batteryInfo.stale === true)
   readonly property int batteryLowPercent: Math.max(0, Number(root.value("battery.low_percent", 20)))
   readonly property bool batteryShowBar: root.value("battery.show_bar", true) === true
-  readonly property int batteryDotSize: Math.max(8, Math.round(Style.bar.iconSize * 0.46))
+  readonly property int batteryDotSize: Math.max(10, Math.round(Style.bar.iconSize * 0.60))
   readonly property color batteryColor: {
     if (!root.batteryAvailable) return root.idleColor
     if (root.batteryCharging) return "#5f87d9"
@@ -1142,9 +1145,6 @@ Ui.Panel {
 
           SliderRow {
             visible: root.tab === 0
-            label: strings.t("menu.speed")
-            hint: strings.t("menu.speedHint")
-            help: strings.t("help.speed")
             valueText: Math.round(sliderValue) + " %"
             from: 25
             to: 300
@@ -1164,9 +1164,6 @@ Ui.Panel {
 
           SliderRow {
             visible: root.tab === 0
-            label: strings.t("menu.sniper")
-            hint: strings.t("menu.sniperHint")
-            help: strings.t("help.sniperSpeed")
             valueText: Math.round(sliderValue) + " %"
             from: 5
             to: 100
@@ -1259,7 +1256,7 @@ Ui.Panel {
           }
 
           Column {
-            visible: root.tab === 2
+            visible: root.tab === 2 && root.batteryAvailable
             width: parent.width
             spacing: Style.space(6)
 
@@ -1391,6 +1388,11 @@ Ui.Panel {
                 }
               }
             }
+          }
+
+          StatHeader {
+            visible: root.tab === 2
+            text: strings.t("menu.buttons")
           }
 
           Column {

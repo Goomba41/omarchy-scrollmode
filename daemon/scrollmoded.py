@@ -430,7 +430,7 @@ def _hidpp_feature_index(fd, index: int, feature_id: int, timeout: float = 0.3):
     return feature if feature not in (0x00, 0xFF) else None
 
 
-def parse_battery(caps: bytes, info: bytes) -> dict:
+def parse_battery(caps: bytes, info: bytes, wireless: bool = False) -> dict:
     """Decode the HID++ 0x1004 unified battery reads."""
     if not caps or not info or len(caps) < 2 or len(info) < 3:
         return unavailable_battery()
@@ -444,6 +444,7 @@ def parse_battery(caps: bytes, info: bytes) -> dict:
         "level": level,
         "state": state,
         "charging": state in ("charging", "nearly-full", "slow-charging"),
+        "wireless": bool(wireless),
         "source": "hidpp",
         "updated": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
@@ -456,18 +457,19 @@ def unavailable_battery() -> dict:
         "level": "",
         "state": "",
         "charging": False,
+        "wireless": False,
         "source": "",
         "updated": "",
     }
 
 
-def _read_battery_at(node: str, index: int, feature: int):
+def _read_battery_at(node: str, index: int, feature: int, wireless: bool = False):
     try:
         fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
     except OSError:
         return None
     try:
-        time.sleep(0.05)
+        time.sleep(0.15)
         while select.select([fd], [], [], 0)[0]:
             os.read(fd, 64)
         caps = _hidpp_request(fd, index, feature, 0)
@@ -476,13 +478,13 @@ def _read_battery_at(node: str, index: int, feature: int):
         os.close(fd)
     if not caps or not info:
         return None
-    return parse_battery(bytes(caps[4:]), bytes(info[4:]))
+    return parse_battery(bytes(caps[4:]), bytes(info[4:]), wireless)
 
 
 _BATTERY_HINT = None
 
 
-def _find_battery() -> tuple[str, int, int] | None:
+def _find_battery() -> tuple[str, int, int, bool] | None:
     best = None
     for link in sorted(glob.glob("/sys/class/hidraw/hidraw*")):
         try:
@@ -494,6 +496,14 @@ def _find_battery() -> tuple[str, int, int] | None:
             continue
         if "046D" not in uevent.upper() or b"\x06\x00\xff" not in descriptor:
             continue
+        hid_name = ""
+        hid_id = ""
+        for line in uevent.splitlines():
+            if line.startswith("HID_NAME="):
+                hid_name = line.partition("=")[2]
+            elif line.startswith("HID_ID="):
+                hid_id = line.partition("=")[2]
+        wireless = "receiver" in hid_name.lower() or hid_id.upper().startswith("0005:")
         node = "/dev/" + os.path.basename(link)
         try:
             fd = os.open(node, os.O_RDWR | os.O_NONBLOCK)
@@ -502,7 +512,7 @@ def _find_battery() -> tuple[str, int, int] | None:
         try:
             while select.select([fd], [], [], 0)[0]:
                 os.read(fd, 64)
-            time.sleep(0.05)
+            time.sleep(0.1)
             for index in range(1, 7):
                 # Ask for the feature first: absent devices answer the root
                 # request immediately, while the name lookup can wait for a
@@ -519,12 +529,12 @@ def _find_battery() -> tuple[str, int, int] | None:
                 else:
                     score = 0
                 if best is None or score > best[0]:
-                    best = (score, node, index, feature)
+                    best = (score, node, index, feature, wireless)
         except OSError:
             continue
         finally:
             os.close(fd)
-    return (best[1], best[2], best[3]) if best else None
+    return (best[1], best[2], best[3], best[4]) if best else None
 
 
 def hidpp_battery_state() -> dict:
