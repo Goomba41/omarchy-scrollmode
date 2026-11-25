@@ -2122,13 +2122,20 @@ Ui.Panel {
             wrapMode: Text.WordWrap
           }
 
-          StatHeader {
+          Column {
+            id: buttonsSection
             visible: root.tab === 2 && root.supportsButtons
-            text: strings.t("menu.buttons")
-          }
+            width: parent.width
+            spacing: 0
+
+            StatHeader {
+              text: strings.t("menu.buttons")
+            }
+
+            Item { width: 1; height: Style.space(8) }
 
           Column {
-            visible: root.supportsButtons && root.sniperAvailable && root.tab === 2
+            visible: root.sniperAvailable
             width: parent.width
             spacing: Style.space(6)
 
@@ -2195,6 +2202,7 @@ Ui.Panel {
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
             }
+          }
           }
 
           Ui.PanelSeparator {
@@ -2302,17 +2310,23 @@ Ui.Panel {
             Item { width: 1; height: Style.space(6) }
           }
 
-          Ui.PanelSeparator {
+          Column {
+            id: hotkeysSection
             visible: root.tab === 2 && root.supportsButtons
             width: parent.width
-          }
+            spacing: 0
+
+            Item { width: 1; height: Style.space(8) }
+
+            Ui.PanelSeparator {
+              width: parent.width
+            }
+
+            Item { width: 1; height: Style.space(8) }
 
           Column {
-            visible: root.tab === 2 && root.supportsButtons
             width: parent.width
-            spacing: Style.space(6)
-
-            Item { width: 1; height: Style.space(4) }
+            spacing: Style.space(1)
 
             Text {
               width: parent.width
@@ -2346,9 +2360,9 @@ Ui.Panel {
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
             }
-
-            Item { width: 1; height: Style.space(4) }
           }
+
+          Item { width: 1; height: Style.space(8) }
 
           ActionButton {
             id: openConfigButton
@@ -2360,9 +2374,8 @@ Ui.Panel {
           }
 
           Item {
-            visible: root.tab === 2 && root.supportsButtons
             width: 1
-            height: Style.space(4)
+            height: Style.space(2)
           }
 
           Ui.Button {
@@ -2389,6 +2402,7 @@ Ui.Panel {
               interval: 3000
               onTriggered: resetButton.armed = false
             }
+          }
           }
         }
       }

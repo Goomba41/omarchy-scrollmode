@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.5] — 2026-11-25
+
+### Changed
+
+- Rebalanced the Buttons & Hotkeys section around its logical blocks: 8 px
+  above and below its separator, 8 px between the heading and the button
+  picker group, dense hotkey hint lines, 8 px between the hint paragraph and
+  the button group, and only 2 px between Open config and Reset.
+
 ## [1.9.4] — 2026-11-25
 
 ### Changed
