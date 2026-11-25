@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.1] — 2026-11-25
+
+### Added
+
+- **Manual DPI** in the Device tab when a mouse does not expose its stages, or
+  when a manual value is already set. The slider covers 50–64,000 DPI and has a
+  matching **Clear manual DPI** button. Keyboard focus reaches both.
+- Mouse statistics are now kept **per device**. Switching from a mouse with DPI
+  to a simple one starts a fresh section instead of showing the previous
+  mouse's distance or freezing it. The pre-v4 global mouse section is claimed
+  once by the first mouse that becomes active after the upgrade.
+
+### Changed
+
+- DPI stages use an even grid of up to five columns, sized from the widest
+  possible chip label. Rows grow as needed for mice with many stages.
+- Removed the redundant current-DPI line, the stage/range line and the colour
+  explanation. The highlighted chip and the source badge carry that
+  information, and the section is shorter.
+
 ## [1.10.0] — 2026-11-25
 
 ### Added

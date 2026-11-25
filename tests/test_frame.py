@@ -307,7 +307,9 @@ def main():
     assert day["counts"] == 20.0 and abs(day["notches"] - 20.0 / 85.0) < 1e-9, day
     assert day["flicks"] == 1, day
 
-    # Mouse stats collect movement, physical wheel notches and clicks.
+    # Mouse stats are kept per device. Movement, physical wheel notches and
+    # clicks land in the active mouse's own section.
+    daemon.active_id = "test:wings"
     daemon.device_kind = "mouse"
     daemon.record_raw_stats([
         event(ecodes.EV_REL, ecodes.REL_X, 10),
@@ -317,33 +319,76 @@ def main():
     daemon.save_stats()
     with open(daemon.stats_path) as handle:
         stats = json.load(handle)
-    mouse = stats["mouse"]
+    mouse = stats["mice"]["test:wings"]
     print("mouse stats:", {k: mouse[k] for k in ("counts", "wheel", "clicks")})
     assert mouse["counts"] == 10.0, mouse
     assert mouse["wheel"] == 1.0 and mouse["clicks"] == 1, mouse
 
     # Distance is stored in metres when the DPI is known, and a later DPI
     # change never rewrites the distance already recorded.
-    daemon.stats["mouse"] = scrollmoded.default_mouse_stats()
+    daemon.stats["mice"]["test:wings"] = scrollmoded.default_mouse_stats()
     daemon.dpi_info = {"dpi": 800}
     daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_X, 800)])
-    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
+    wings = daemon.stats["mice"]["test:wings"]
+    assert abs(wings["distance_m"] - 0.0254) < 1e-9, wings
     daemon.dpi_info = {"dpi": 1600}
     daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_X, 1600)])
-    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0508) < 1e-9, daemon.stats["mouse"]
-    day = next(iter(daemon.stats["mouse"]["days"].values()))
+    assert abs(wings["distance_m"] - 0.0508) < 1e-9, wings
+    day = next(iter(wings["days"].values()))
     assert abs(day["distance_m"] - 0.0508) < 1e-9, day
-    print("mouse distance:", daemon.stats["mouse"]["distance_m"], "m")
+    print("mouse distance:", wings["distance_m"], "m")
+
+    # A simple mouse without DPI gets its own section and does not inherit or
+    # freeze the first mouse's distance.
+    daemon.active_id = "test:plain"
+    daemon.dpi_info = {"dpi": 0}
+    daemon.record_raw_stats([
+        event(ecodes.EV_REL, ecodes.REL_X, 100),
+        event(ecodes.EV_REL, ecodes.REL_WHEEL, 1),
+    ])
+    plain = daemon.stats["mice"]["test:plain"]
+    assert plain["counts"] == 100.0 and plain["distance_m"] == 0.0, plain
+    assert abs(wings["distance_m"] - 0.0508) < 1e-9, wings
+    daemon.active_id = "test:wings"
+    daemon.dpi_info = {"dpi": 1600}
 
     # Old counts migrate once, as soon as a DPI becomes known.
-    daemon.stats["mouse"] = scrollmoded.default_mouse_stats()
-    daemon.stats["mouse"]["counts"] = 800.0
+    daemon.stats["mice"]["test:wings"] = scrollmoded.default_mouse_stats()
+    wings = daemon.stats["mice"]["test:wings"]
+    wings["counts"] = 800.0
     daemon.dpi_info = {"dpi": 800}
     daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
-    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
-    assert daemon.stats["mouse"]["distance_migrated"] is True, daemon.stats["mouse"]
+    assert abs(wings["distance_m"] - 0.0254) < 1e-9, wings
+    assert wings["distance_migrated"] is True, wings
     daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
-    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
+    assert abs(wings["distance_m"] - 0.0254) < 1e-9, wings
+
+    # A pre-v4 global mouse section is claimed by the first active mouse once.
+    v3_path = os.path.join(directory, "mouse-v3.json")
+    with open(v3_path, "w") as handle:
+        json.dump({
+            "version": 3,
+            "mouse": {
+                "counts": 800.0,
+                "dpi": 0.0,
+                "days": {"2026-01-02": {"counts": 800.0, "ms": 10.0}},
+            },
+        }, handle)
+    daemon.stats_path = v3_path
+    daemon.stats = daemon.load_stats()
+    daemon.active_id = "legacy:first"
+    daemon.device_kind = "mouse"
+    daemon.dpi_info = {"dpi": 800}
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
+    first = daemon.stats["mice"]["legacy:first"]
+    assert first["counts"] == 800.0, first
+    assert abs(first["distance_m"] - 0.0254) < 1e-9, first
+    assert daemon.stats["mouse_migrated"] is True, daemon.stats
+    daemon.active_id = "legacy:second"
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
+    second = daemon.stats["mice"]["legacy:second"]
+    assert second["counts"] == 0.0 and second["distance_m"] == 0.0, second
+    print("legacy mouse stats: first claimed")
 
     # Older statistics only stored notches per day; loading migrates them.
     legacy_path = os.path.join(directory, "legacy.json")
@@ -355,7 +400,7 @@ def main():
         }, handle)
     daemon.stats_path = legacy_path
     legacy = daemon.load_stats()
-    assert legacy["version"] == 3, legacy
+    assert legacy["version"] == 4, legacy
     assert legacy["trackball"]["days"]["2026-01-01"]["counts"] == 340.0, legacy
 
     # HID++ unified battery (0x1004) decoding.

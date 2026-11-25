@@ -271,10 +271,9 @@ never writes battery settings to the device.
 ### DPI
 
 The **Device** tab for a mouse adds a **DPI** section. It lists every stage
-the mouse exposes as a chip, highlights the current stage, names the source
-(`libratbag`, `vendor` or `manual`) and shows the range and stage count. The
-chip colour depends only on the DPI value, so `800` is the same blue on every
-mouse:
+the mouse exposes as an even chip grid, highlights the current stage and names
+the source (`libratbag`, `vendor` or `manual`). The chip colour depends only on
+the DPI value, so `800` is the same blue on every mouse:
 
 | DPI | Hue | Colour |
 |---:|---:|---|
@@ -297,15 +296,17 @@ Providers are tried in this order:
    Known stages are `900/1800/2700/5400/7200/14000/21000`. The stage is cached
    in `/var/lib/omarchy-scrollmode/dpi.json`, so pressing the button once is
    enough for the current stage to survive restarts.
-3. **Manual.** `omarchy-scrollmode dpi set 1200` stores a value for the active
-   mouse. It is used for distance statistics when nothing can read the device.
+3. **Manual.** A **Manual DPI** slider appears when nothing can read the mouse
+   (or after a manual value is set). It is used for distance statistics and can
+   be cleared from the same section. `omarchy-scrollmode dpi set 1200` and
+   `omarchy-scrollmode dpi clear` do the same from the CLI.
 4. **None.** The section says that the mouse does not expose DPI and movement
-   remains in raw counts.
+   remains in raw counts until a manual value is set.
 
 Trackballs never show this section. This release only reads DPI; changing it
-from the panel is a later step. When the section says the DPI is not exposed,
-it offers **Install libratbag** or **Open Piper** / **Install Piper** depending
-on what is already on the system.
+on mice that do expose stages is a later step. When the section says the DPI
+is not exposed, it offers **Install libratbag**, **Start libratbag** or
+**Open Piper** / **Install Piper** depending on what is already on the system.
 
 ### Stats
 
@@ -325,11 +326,14 @@ the current lap, trip or orbit, with the number already completed in brackets.
 
 For a mouse the same tab shows **movement, wheel notches/pages, clicks, active
 time and days**. Mouse movement is collected in pointer mode from the physical
-device without grabbing it. When the DPI is known, each frame is converted to
-metres immediately and stored in `distance_m`, so changing DPI later never
-rewrites the distance already recorded. Existing counts are migrated once at
-the first known DPI. Without a DPI, movement stays in raw counts and the tab
-says so; the Earth/Moon/Sun ladder appears as soon as distance is available.
+device without grabbing it. Each mouse has its own section keyed by device id,
+so switching mice does not mix their counts or freeze the previous mouse's
+distance. When the DPI is known, each frame is converted to metres immediately
+and stored in `distance_m`, so changing DPI later never rewrites the distance
+already recorded. Existing counts are migrated once at the first known DPI.
+Without a DPI, movement stays in raw counts and the tab says so; set **Manual
+DPI** in the Device tab to get distance for a mouse that does not report it.
+The Earth/Moon/Sun ladder appears as soon as distance is available.
 
 It collects automatically and is stored in
 `/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor
@@ -448,7 +452,7 @@ button, and the bar icon is dimmed:
 
   "dpi": {
     "ratbag_device": "",        // force a ratbagctl device id or name
-    "manual": {}                // per-device DPI fallback, filled by `dpi set`
+    "manual": {}                // per-device DPI fallback, also in the panel
   }
 }
 ```
@@ -569,7 +573,7 @@ released when the process exits.
 /run/omarchy-scrollmode/device       display name of the active device
 /run/omarchy-scrollmode/control.sock CLI control socket (0600, user-owned)
 
-/var/lib/omarchy-scrollmode/stats.json  cumulative statistics for the Stats tab
+/var/lib/omarchy-scrollmode/stats.json  cumulative stats; mouse sections per device
 /var/lib/omarchy-scrollmode/dpi.json    cached vendor DPI stage per device
 ```
 
@@ -624,7 +628,8 @@ slate.
   (the device you picked), not classification.
 - DPI is vendor-specific. libratbag supports many gaming mice but not every
   model; unknown mice without a vendor parser stay counts-only until a manual
-  `dpi set`. Vendor tables currently cover the Wings Tech Gaming Mouse.
+  DPI is set in the Device tab or with `dpi set`. Vendor tables currently cover
+  the Wings Tech Gaming Mouse.
 - This release reads DPI only. Writing a new DPI stage from the panel is
   planned for the next iteration.
 

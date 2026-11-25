@@ -1545,6 +1545,8 @@ class Daemon:
         self.supports_scroll = self.device_kind in ("trackball", "unknown")
         self.supports_stats = self.device_kind in ("trackball", "mouse")
         self.supports_buttons = self.device_kind in ("trackball", "unknown")
+        if self.ensure_mouse_device():
+            self.save_stats()
         self.update_dpi(active_name, active_raw, force=self.dpi_force)
         self.dpi_force = False
 
@@ -1923,17 +1925,22 @@ class Daemon:
         if not isinstance(data, dict):
             data = {}
 
-        # v3 keeps independent trackball and mouse sections. Older files were
-        # flat trackball data; migrate them in place.
+        # v4 keeps trackball stats global and mouse stats per device. Older
+        # files had one global mouse section; it is kept as `mouse` and claimed
+        # by the first mouse that becomes active after the upgrade.
         legacy = data if "counts" in data and "trackball" not in data else {}
         trackball = data.get("trackball") if isinstance(data.get("trackball"), dict) else legacy
         mouse = data.get("mouse") if isinstance(data.get("mouse"), dict) else {}
+        mice = data.get("mice") if isinstance(data.get("mice"), dict) else {}
         stats = {
-            "version": 3,
+            "version": 4,
             "started": str(data.get("started") or ""),
             "updated": str(data.get("updated") or ""),
             "trackball": default_trackball_stats(),
             "mouse": default_mouse_stats(),
+            "mice": {},
+            "mouse_migrated": bool(data.get("mouse_migrated", False)),
+            "mouse_device": str(data.get("mouse_device") or ""),
         }
         for key, value in stats["trackball"].items():
             if key in trackball:
@@ -1946,6 +1953,17 @@ class Daemon:
             stats["trackball"]["days"] = {}
         if not isinstance(stats["mouse"].get("days"), dict):
             stats["mouse"]["days"] = {}
+
+        for device_id, entry in mice.items():
+            if not isinstance(entry, dict) or not device_id:
+                continue
+            clean = default_mouse_stats()
+            for key, value in clean.items():
+                if key in entry:
+                    clean[key] = entry[key]
+            if not isinstance(clean.get("days"), dict):
+                clean["days"] = {}
+            stats["mice"][str(device_id)] = clean
 
         # Older statistics kept only notches per day. Rebuild counts from the
         # overall ratio so day distances stay correct after the upgrade.
@@ -1971,6 +1989,67 @@ class Daemon:
             self.last_stats_save = time.monotonic()
         except OSError as exc:
             log(f"cannot write {self.stats_path}: {exc}")
+
+    @staticmethod
+    def mouse_stats_have_data(stats: dict) -> bool:
+        if not isinstance(stats, dict):
+            return False
+        for key in ("counts", "distance_m", "wheel", "active_ms",
+                    "up", "down", "left", "right", "max_speed", "dpi"):
+            try:
+                if float(stats.get(key) or 0.0) > 0:
+                    return True
+            except (TypeError, ValueError):
+                continue
+        try:
+            if int(stats.get("clicks") or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            pass
+        return bool(stats.get("days"))
+
+    def claim_legacy_mouse(self, device_id: str, entry: dict) -> bool:
+        """Move the pre-v4 global mouse stats to the first active mouse once."""
+        if self.stats.get("mouse_migrated"):
+            return False
+        owner = str(self.stats.get("mouse_device") or "")
+        if owner and owner != device_id:
+            return False
+        legacy = self.stats.get("mouse")
+        if not self.mouse_stats_have_data(legacy):
+            self.stats["mouse_device"] = device_id
+            return False
+        for key, value in legacy.items():
+            if key == "days":
+                entry["days"] = json.loads(json.dumps(value))
+            else:
+                entry[key] = value
+        self.stats["mouse_migrated"] = True
+        self.stats["mouse_device"] = device_id
+        log(f"legacy mouse stats moved to {device_id}")
+        return True
+
+    def mouse_stats(self) -> dict:
+        if not self.active_id:
+            return default_mouse_stats()
+        mice = self.stats.setdefault("mice", {})
+        entry = mice.get(self.active_id)
+        if isinstance(entry, dict):
+            return entry
+        entry = default_mouse_stats()
+        mice[self.active_id] = entry
+        self.claim_legacy_mouse(self.active_id, entry)
+        return entry
+
+    def ensure_mouse_device(self) -> bool:
+        """Create the per-device section as soon as a mouse becomes active."""
+        if self.device_kind != "mouse" or not self.active_id:
+            return False
+        mice = self.stats.setdefault("mice", {})
+        if isinstance(mice.get(self.active_id), dict):
+            return False
+        self.mouse_stats()
+        return True
 
     @staticmethod
     def counts_to_meters(counts: float, dpi_value: int) -> float:
@@ -2029,7 +2108,8 @@ class Daemon:
         moved = bool(dx or dy)
 
         if self.device_kind == "mouse":
-            stats = self.stats["mouse"]
+            stats = self.mouse_stats()
+            self.stats["mouse_device"] = self.active_id
             dpi_value = self.current_dpi()
             if dpi_value > 0 and not stats.get("distance_migrated"):
                 self.migrate_mouse_distance(stats, dpi_value)

@@ -236,10 +236,21 @@ Ui.Panel {
   readonly property int dpiCurrent: (status && status.dpi) ? Number(status.dpi) : 0
   readonly property string dpiSource: (status && status.dpiSource)
     ? String(status.dpiSource) : "none"
-  readonly property var dpiRange: (status && status.dpiRange
-    && typeof status.dpiRange === "object") ? status.dpiRange : ({})
   readonly property bool dpiVisible: root.tab === 2 && root.deviceKind === "mouse"
   readonly property bool darkTheme: Color.popups.background.hslLightness < 0.5
+  property real dpiGridWidth: 0
+  readonly property int dpiColumns: {
+    var gap = Style.space(6)
+    var width = root.dpiGridWidth > 0 ? root.dpiGridWidth : Style.space(360)
+    var minimum = Style.space(64)
+    var fit = Math.floor((width + gap) / (minimum + gap))
+    return Math.max(2, Math.min(5, fit))
+  }
+  readonly property int manualDpiValue: {
+    var manual = root.value("dpi.manual", ({}))
+    if (!manual || typeof manual !== "object" || root.activeId === "") return 0
+    return Number(manual[root.activeId] || 0)
+  }
   readonly property string dpiToolAction: {
     if (!root.dpiVisible) return ""
     if (root.dpiSource === "ratbag")
@@ -272,12 +283,14 @@ Ui.Panel {
     return root.fmtNumber(Number(dpiValue), 0) + " " + strings.t("dpi.unit")
   }
 
-  function dpiRangeText() {
-    var span = root.dpiRange
-    if (!span || !span.min || !span.max) return ""
-    return root.fmtNumber(Number(span.min), 0) + "–"
-      + root.fmtNumber(Number(span.max), 0) + " " + strings.t("dpi.unit")
-      + " · " + strings.t("dpi.stageCount").arg(root.dpiStages.length)
+  function setManualDpi(value) {
+    var dpiValue = Math.round(Number(value))
+    if (!(dpiValue > 0)) return
+    Quickshell.execDetached([root.cli, "dpi", "set", String(dpiValue)])
+  }
+
+  function clearManualDpi() {
+    Quickshell.execDetached([root.cli, "dpi", "clear"])
   }
 
   function dpiToolLabel() {
@@ -334,7 +347,17 @@ Ui.Panel {
     if (statsInfo && statsInfo.counts !== undefined) return statsInfo
     return ({})
   }
-  readonly property var mouseInfo: (statsInfo && statsInfo.mouse) ? statsInfo.mouse : ({})
+  readonly property var mouseSections: (statsInfo && statsInfo.mice
+    && typeof statsInfo.mice === "object") ? statsInfo.mice : ({})
+  readonly property var mouseInfo: {
+    if (root.activeId !== "" && root.mouseSections[root.activeId]
+        && typeof root.mouseSections[root.activeId] === "object")
+      return root.mouseSections[root.activeId]
+    // Before the first v4 section exists, show the old global mouse data.
+    if (Object.keys(root.mouseSections).length === 0)
+      return (statsInfo && statsInfo.mouse) ? statsInfo.mouse : ({})
+    return ({})
+  }
   readonly property real statCounts: Number(trackballInfo.counts || 0)
   readonly property real statNotches: Number(trackballInfo.notches || 0)
   readonly property int statFlicks: Number(trackballInfo.flicks || 0)
@@ -632,6 +655,12 @@ Ui.Panel {
       rows.push("autoExitHelp")
     } else if (root.tab === 2) {
       rows = ["device", "useDevice", "rescan"]
+      if (root.dpiVisible && (root.dpiSource === "none"
+          || root.dpiSource === "manual")) {
+        rows.push("dpiManual")
+        rows.push("dpiManualHelp")
+        if (root.dpiSource === "manual") rows.push("dpiClear")
+      }
       if (root.dpiToolAction !== "") rows.push("dpiTool")
       if (root.batteryAvailable) {
         rows.push("batteryShowBar")
@@ -742,6 +771,9 @@ Ui.Panel {
     if (id === "device") return devicePicker
     if (id === "useDevice") return useButton
     if (id === "rescan") return refreshButton
+    if (id === "dpiManual") return manualDpiSlider
+    if (id === "dpiManualHelp") return manualDpiSlider.helpIcon
+    if (id === "dpiClear") return dpiClearButton
     if (id === "dpiTool") return dpiToolButton
     if (id === "batteryShowBar") return batteryShowToggle
     if (id === "batteryShowBarHelp") return batteryShowToggle.helpIcon
@@ -802,6 +834,7 @@ Ui.Panel {
     else if (id === "holdThreshold") root.nudgeSlider(holdSlider, delta)
     else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], delta)
     else if (id === "device") root.cyclePending(delta)
+    else if (id === "dpiManual") root.nudgeSlider(manualDpiSlider, delta)
     else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
     else if (id === "batteryLow") root.nudgeSlider(batteryLowSlider, delta)
     else if (id === "batteryPoll") root.cycleNumber("battery.poll_seconds", [60, 300, 900, 1800], delta)
@@ -829,6 +862,8 @@ Ui.Panel {
     else if (id === "device") devicePicker.open()
     else if (id === "useDevice") root.applyPendingDevice()
     else if (id === "rescan") root.rescan()
+    else if (id === "dpiManual") manualDpiSlider.flash = true
+    else if (id === "dpiClear") root.clearManualDpi()
     else if (id === "dpiTool") root.runDpiTool()
     else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
     else if (id === "batteryLow") batteryLowSlider.flash = true
@@ -1464,10 +1499,15 @@ Ui.Panel {
 
             StatHeader { text: strings.t("menu.dpi") }
 
-            Flow {
+            Grid {
+              id: dpiGrid
               visible: root.dpiStages.length > 0
               width: parent.width
+              columns: root.dpiColumns
               spacing: Style.space(6)
+              readonly property real cellWidth:
+                (width - (columns - 1) * spacing) / Math.max(1, columns)
+              onWidthChanged: root.dpiGridWidth = width
 
               Repeater {
                 model: root.dpiStages
@@ -1481,7 +1521,7 @@ Ui.Panel {
                   readonly property color tone: DpiColor.colorFor(
                     chipDpi, 1, root.darkTheme)
 
-                  width: dpiChipRow.implicitWidth + Style.space(18)
+                  width: dpiGrid.cellWidth
                   height: Style.spacing.controlHeight - Style.space(8)
                   radius: Style.space(4)
                   color: Qt.rgba(tone.r, tone.g, tone.b, active ? 0.30 : 0.09)
@@ -1503,6 +1543,8 @@ Ui.Panel {
                     }
 
                     Text {
+                      width: Math.min(implicitWidth,
+                        dpiGrid.cellWidth - Style.space(26))
                       text: root.dpiShort(dpiChip.chipDpi)
                       textFormat: Text.PlainText
                       color: Color.popups.text
@@ -1510,6 +1552,7 @@ Ui.Panel {
                       font.family: Style.font.family
                       font.pixelSize: Style.font.body
                       font.bold: dpiChip.active
+                      elide: Text.ElideRight
                     }
                   }
 
@@ -1524,8 +1567,7 @@ Ui.Panel {
                   Ui.PanelToolTip {
                     visible: dpiChipMouse.containsMouse
                     text: root.dpiText(dpiChip.chipDpi)
-                      + (dpiChip.active ? " · " + strings.t("dpi.currentLower") : "")
-                    width: Style.space(180)
+                    width: Style.space(140)
                     delay: 250
                   }
                 }
@@ -1534,29 +1576,30 @@ Ui.Panel {
 
             Item {
               width: parent.width
-              height: Math.max(dpiCurrentText.implicitHeight, dpiSourceText.implicitHeight)
+              height: Math.max(
+                dpiNotExposed.visible ? dpiNotExposed.implicitHeight : 0,
+                dpiSourceText.visible ? dpiSourceText.implicitHeight : 0)
 
               Text {
-                id: dpiCurrentText
+                id: dpiNotExposed
+                visible: root.dpiSource === "none"
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width * 0.62)
-                text: root.dpiCurrent > 0
-                  ? strings.t("dpi.current") + " · " + root.dpiText(root.dpiCurrent)
-                  : (root.dpiStages.length > 0 ? strings.t("dpi.unknown")
-                    : strings.t("dpi.notExposed"))
+                width: parent.width
+                text: strings.t("dpi.notExposed")
                 textFormat: Text.PlainText
                 color: Color.popups.text
                 font.family: Style.font.family
                 font.pixelSize: Style.font.body
-                elide: Text.ElideRight
+                wrapMode: Text.WordWrap
               }
 
               Text {
                 id: dpiSourceText
+                visible: root.dpiSource !== "none"
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width * 0.34)
+                width: Math.max(0, parent.width * 0.5)
                 text: root.dpiSourceLabel(root.dpiSource)
                 textFormat: Text.PlainText
                 color: Color.popups.text
@@ -1569,36 +1612,12 @@ Ui.Panel {
             }
 
             Text {
-              visible: root.dpiStages.length > 1
-              width: parent.width
-              text: root.dpiRangeText()
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.5
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-            }
-
-            Text {
               visible: root.dpiSource === "vendor" && root.dpiCurrent <= 0
               width: parent.width
               text: strings.t("dpi.vendorHint")
               textFormat: Text.PlainText
               color: Color.popups.text
               opacity: 0.5
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
-            }
-
-            Text {
-              visible: root.dpiStages.length > 0
-              width: parent.width
-              text: strings.t("dpi.sameColors")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.4
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
@@ -1625,6 +1644,33 @@ Ui.Panel {
               idleText: root.dpiToolLabel()
               onHovered: function(isHovered) { if (isHovered) root.setCursor("dpiTool") }
               onActivated: root.runDpiTool()
+            }
+
+            SliderRow {
+              id: manualDpiSlider
+              helpId: "dpiManualHelp"
+              rowId: "dpiManual"
+              visible: root.dpiSource === "none" || root.dpiSource === "manual"
+              label: strings.t("dpi.manual")
+              help: strings.t("help.dpiManual")
+              valueText: Math.round(sliderValue) + " " + strings.t("dpi.unit")
+              from: 50
+              to: 64000
+              step: 50
+              tickCount: 14
+              integer: true
+              source: root.manualDpiValue > 0 ? root.manualDpiValue : 1000
+              onCommit: function(v) { root.setManualDpi(v) }
+            }
+
+            ActionButton {
+              id: dpiClearButton
+              visible: root.dpiSource === "manual"
+              width: parent.width
+              height: Style.spacing.controlHeight
+              idleText: strings.t("dpi.clearManual")
+              onHovered: function(isHovered) { if (isHovered) root.setCursor("dpiClear") }
+              onActivated: root.clearManualDpi()
             }
 
             Item { width: 1; height: Style.space(8) }
