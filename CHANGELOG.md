@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.1] — 2026-11-25
+
+### Fixed
+
+- The connection type is now shown only in the device picker; the duplicate
+  Device row and footer line were removed.
+- The cursor arrow is now a fully opaque prism. The side faces no longer carry
+  the back face's alpha, so the end cap reads as one solid 3D object.
+- Slider labels keep the help icon next to the label and reserve room for the
+  green Done mark, so it no longer collides with the value.
+- The focus frame now has the same inset on every side and enough room inside
+  the scroll viewport, so full-width sliders no longer lose their left and
+  right borders. Content is inset consistently from the frame.
+- The footer uses whole hint units: a hint wraps to the next line as a unit
+  instead of splitting mid-phrase, and now includes `r rescan`.
+- Help question marks are part of the keyboard cursor cycle; focusing one
+  shows its tooltip.
+- Added spacing between the footer separator and the scrollable content.
+- Removed the buses and track-laps rows from the trackball statistics.
+
 ## [1.9.0] — 2026-11-25
 
 ### Added

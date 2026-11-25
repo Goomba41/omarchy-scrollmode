@@ -245,9 +245,11 @@ Item {
         ctx.lineTo(back[b][0], back[b][1])
       ctx.closePath()
       ctx.fillStyle = Qt.darker(cursor.color, 2.05)
-      ctx.globalAlpha = 0.96
+      ctx.globalAlpha = 1
       ctx.fill()
 
+      // Every face is opaque: the prism must read as one solid object, not a
+      // translucent ribbon with a see-through end.
       ctx.fillStyle = Qt.darker(cursor.color, 1.72)
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length

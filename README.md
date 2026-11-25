@@ -26,9 +26,9 @@ settings on a left click.
 - **Keyboard-first**: `j`/`k` move, `h`/`l` adjust, `Enter` selects, `1`–`4`
   switch tabs, `r` rescans and `Esc` closes. Mouse hover feeds the same cursor,
   so only one control is highlighted at a time.
-- **Fixed footer**: the bottom of every panel shows the active connection on
-  its first line and the key hints on the second. It stays put while the
-  settings scroll.
+- **Fixed footer**: the bottom of every panel keeps the keyboard hints visible
+  while the settings scroll. Each hint wraps as a whole unit instead of
+  splitting mid-phrase, and the connection type lives only in the picker.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
 - **Drawn device icons**: the trackball is a shaded sphere with a specular
@@ -41,7 +41,7 @@ settings on a left click.
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
 - **Stats tab**: trackball stats are collected in pointer mode too: ball
-  distance, turns, top speed, active time, days and the bus-to-Sun ladder.
+  distance, turns, top speed, active time, days and the Earth/Moon/Sun ladder.
   Flicks and coast remain scroll-only. A mouse gets its own stats: movement,
   wheel notches/pages, clicks, active time and days.
 - **Battery**: for wireless mice that report a battery, a small charge ring on
@@ -198,8 +198,9 @@ a short tooltip explaining what it changes.
 (or the left/right arrows) adjust the current control, `Enter` selects, `1`–`4`
 switch tabs, `r` rescans and `Esc` closes. Sliders and toggles change on
 `h`/`l`; the device picker cycles through devices. The cursor follows mouse
-hover too, and the fixed footer always shows the active connection plus these
-hints, even while the settings scroll.
+hover too. Question-mark hints are part of the same cursor cycle and show
+their tooltip when focused. The fixed footer keeps these hints visible even
+while the settings scroll.
 
 Every control writes
 `~/.config/omarchy/scrollmode.json` through `omarchy-scrollmode set` and the
@@ -270,8 +271,8 @@ The **Stats** tab for a trackball opens with three headline numbers: record
 speed, distance the ball rolled and ball turns. Ball movement is counted in
 pointer mode as well as scroll/sniper, so the distance and turns grow whenever
 the ball is used; flick and coast records stay scroll-only. Below them are
-totals, flick records, days, and a distance ladder that climbs from bus lengths
-and football fields through track laps and marathons to a lap around the Earth,
+totals, flick records, days, and a distance ladder that climbs from football
+fields through marathons to a lap around the Earth,
 a trip to the Moon and an orbit around the Sun. Counts use enough decimal
 places to move on a normal day of rolling. The big targets show progress toward
 the current lap, trip or orbit, with the number already completed in brackets.
@@ -314,16 +315,16 @@ is stored as `device.selected` and the daemon re-grabs it.
 The daemon classifies every pointer when it connects and keeps the result in
 `status.json` as `kind`, `code`, `confidence`, `sources`, `wireless`,
 `connection` and the `supportsScroll` / `supportsStats` / `supportsButtons`
-flags. `connection` is `usb`, `receiver`, `bluetooth` or `unknown`; the
-picker shows a short tag and the Device tab spells it out. The panel uses the
+flags. `connection` is `usb`, `receiver`, `bluetooth` or `unknown`; it is
+shown as a short tag in the device picker and nowhere else. The panel uses the
 capability flags to show only the applicable parts:
 
 - **Trackball** — Scroll, Feel, Device and Stats; battery when wireless.
-- **Mouse** — Device and Stats only. The Device tab shows the picker, its
-  connection type, battery when wireless, and a note that more mouse settings
-  are coming. Scroll/Feel, sniper and hotkeys are hidden; the tab content is
-  also gated by `supportsScroll`, so it cannot leak through while the daemon
-  switches devices.
+- **Mouse** — Device and Stats only. The Device tab shows the picker, battery
+  when wireless, and a note that more mouse settings are coming. Scroll/Feel,
+  sniper and hotkeys are hidden; the tab content is also gated by
+  `supportsScroll`, so it cannot leak through while the daemon switches
+  devices.
 - **Trackpad / tablet / unknown** — Device only for now; unknown pointers keep
   the scroll tabs so an unclassified trackball still works.
 

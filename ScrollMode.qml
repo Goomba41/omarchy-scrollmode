@@ -151,12 +151,6 @@ Ui.Panel {
     if (kind === "tablet") return "TA"
     return "UN"
   }
-  function connectionLabel(value) {
-    if (value === "usb") return strings.t("connection.usb")
-    if (value === "receiver") return strings.t("connection.receiver")
-    if (value === "bluetooth") return strings.t("connection.bluetooth")
-    return strings.t("connection.unknown")
-  }
   function connectionShort(value) {
     if (value === "usb") return strings.t("connection.shortUsb")
     if (value === "receiver") return strings.t("connection.shortReceiver")
@@ -479,6 +473,7 @@ Ui.Panel {
   readonly property bool pendingMismatch: root.devices.length > 0
     && root.pendingId !== "" && root.pendingId !== root.activeId
   readonly property bool noDevices: root.devices.length === 0
+  readonly property var footerHints: strings.t("footer.keys").split("·")
   readonly property bool settingsVisible: root.serviceState === "active"
     && !root.noDevices && !root.pendingMismatch
 
@@ -529,26 +524,39 @@ Ui.Panel {
     if (!root.settingsVisible) return []
     var rows = []
     if (root.tab === 0) {
-      rows = ["speed", "sniper", "invertV", "invertH", "axisLock", "hiRes", "exitOnClick"]
+      rows = ["speed", "speedHelp", "sniper", "sniperHelp", "invertV", "invertH",
+        "axisLock", "axisLockHelp", "hiRes", "hiResHelp",
+        "exitOnClick", "exitOnClickHelp"]
     } else if (root.tab === 1) {
-      rows = ["inertia"]
+      rows = ["inertia", "inertiaHelp"]
       if (root.bool("scroll.inertia")) {
         rows.push("inertiaTrigger")
+        rows.push("inertiaTriggerHelp")
         rows.push("inertiaCoast")
+        rows.push("inertiaCoastHelp")
       }
       rows.push("holdThreshold")
+      rows.push("holdThresholdHelp")
       rows.push("autoExit")
+      rows.push("autoExitHelp")
     } else if (root.tab === 2) {
       rows = ["device", "useDevice", "rescan"]
       if (root.batteryAvailable) {
         rows.push("batteryShowBar")
+        rows.push("batteryShowBarHelp")
         rows.push("batteryLow")
+        rows.push("batteryLowHelp")
         rows.push("batteryPoll")
+        rows.push("batteryPollHelp")
       }
       if (root.supportsButtons) {
         if (root.sniperAvailable) {
-          if (root.sniperCode > 0) rows.push("sniperClear")
+          if (root.sniperCode > 0) {
+            rows.push("sniperClear")
+            rows.push("sniperClearHelp")
+          }
           rows.push("sniperChoose")
+          if (root.sniperCode === 0) rows.push("sniperChooseHelp")
         }
         rows.push("openConfig")
         rows.push("reset")
@@ -618,25 +626,40 @@ Ui.Panel {
   }
   function cursorTarget(id) {
     if (id === "speed") return speedSlider
+    if (id === "speedHelp") return speedSlider.helpIcon
     if (id === "sniper") return sniperSlider
+    if (id === "sniperHelp") return sniperSlider.helpIcon
     if (id === "invertV") return invertVToggle
     if (id === "invertH") return invertHToggle
     if (id === "axisLock") return axisLockToggle
+    if (id === "axisLockHelp") return axisLockToggle.helpIcon
     if (id === "hiRes") return hiResToggle
+    if (id === "hiResHelp") return hiResToggle.helpIcon
     if (id === "exitOnClick") return exitOnClickToggle
+    if (id === "exitOnClickHelp") return exitOnClickToggle.helpIcon
     if (id === "inertia") return inertiaToggle
+    if (id === "inertiaHelp") return inertiaToggle.helpIcon
     if (id === "inertiaTrigger") return inertiaTriggerSlider
+    if (id === "inertiaTriggerHelp") return inertiaTriggerSlider.helpIcon
     if (id === "inertiaCoast") return inertiaCoastSlider
+    if (id === "inertiaCoastHelp") return inertiaCoastSlider.helpIcon
     if (id === "holdThreshold") return holdSlider
+    if (id === "holdThresholdHelp") return holdSlider.helpIcon
     if (id === "autoExit") return autoExitRow
+    if (id === "autoExitHelp") return autoExitHint
     if (id === "device") return devicePicker
     if (id === "useDevice") return useButton
     if (id === "rescan") return refreshButton
     if (id === "batteryShowBar") return batteryShowToggle
+    if (id === "batteryShowBarHelp") return batteryShowToggle.helpIcon
     if (id === "batteryLow") return batteryLowSlider
+    if (id === "batteryLowHelp") return batteryLowSlider.helpIcon
     if (id === "batteryPoll") return batteryPollRow
+    if (id === "batteryPollHelp") return pollHint
     if (id === "sniperClear") return sniperClearToggle
+    if (id === "sniperClearHelp") return sniperClearToggle.helpIcon
     if (id === "sniperChoose") return sniperChooseButton
+    if (id === "sniperChooseHelp") return sniperChooseHint
     if (id === "openConfig") return openConfigButton
     if (id === "reset") return resetButton
     return null
@@ -979,11 +1002,13 @@ Ui.Panel {
           Item {
             id: bodyContent
             width: bodyFlick.width
-            height: menu.implicitHeight
+            height: menu.implicitHeight + Style.space(8) + Style.space(10)
 
       Column {
         id: menu
-        width: parent.width
+        x: Style.space(10)
+        y: Style.space(8)
+        width: parent.width - Style.space(20)
         spacing: Style.space(10)
 
         // -- header ------------------------------------------------------
@@ -1498,16 +1523,8 @@ Ui.Panel {
 
                 StatHeader { text: strings.t("stats.sectionFun") }
                 StatRow {
-                  label: strings.t("stats.buses")
-                  value: root.fmtMultiple(root.statKm * 1000 / 12)
-                }
-                StatRow {
                   label: strings.t("stats.footballFields")
                   value: root.fmtMultiple(root.statKm * 1000 / 105)
-                }
-                StatRow {
-                  label: strings.t("stats.trackLaps")
-                  value: root.fmtMultiple(root.statKm * 1000 / 400)
                 }
                 StatRow {
                   label: strings.t("stats.marathons")
@@ -1794,6 +1811,7 @@ Ui.Panel {
 
           SliderRow {
             id: speedSlider
+            helpId: "speedHelp"
             rowId: "speed"
             visible: root.scrollTabVisible
             label: strings.t("menu.speed")
@@ -1817,6 +1835,7 @@ Ui.Panel {
 
           SliderRow {
             id: sniperSlider
+            helpId: "sniperHelp"
             rowId: "sniper"
             visible: root.scrollTabVisible
             label: strings.t("menu.sniper")
@@ -1858,6 +1877,7 @@ Ui.Panel {
 
           ToggleRow {
             id: axisLockToggle
+            helpId: "axisLockHelp"
             rowId: "axisLock"
             visible: root.scrollTabVisible
             label: strings.t("menu.axisLock")
@@ -1868,6 +1888,7 @@ Ui.Panel {
 
           ToggleRow {
             id: hiResToggle
+            helpId: "hiResHelp"
             rowId: "hiRes"
             visible: root.scrollTabVisible
             label: strings.t("menu.hiRes")
@@ -1878,6 +1899,7 @@ Ui.Panel {
 
           ToggleRow {
             id: exitOnClickToggle
+            helpId: "exitOnClickHelp"
             rowId: "exitOnClick"
             visible: root.scrollTabVisible
             label: strings.t("menu.exitOnClick")
@@ -1888,6 +1910,7 @@ Ui.Panel {
 
           ToggleRow {
             id: inertiaToggle
+            helpId: "inertiaHelp"
             rowId: "inertia"
             visible: root.feelTabVisible
             label: strings.t("menu.inertia")
@@ -1898,6 +1921,7 @@ Ui.Panel {
 
           SliderRow {
             id: inertiaTriggerSlider
+            helpId: "inertiaTriggerHelp"
             rowId: "inertiaTrigger"
             visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaTrigger")
@@ -1914,6 +1938,7 @@ Ui.Panel {
 
           SliderRow {
             id: inertiaCoastSlider
+            helpId: "inertiaCoastHelp"
             rowId: "inertiaCoast"
             visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaCoast")
@@ -1926,12 +1951,6 @@ Ui.Panel {
             integer: true
             source: Number(root.value("scroll.inertia_strength", 100))
             onCommit: function(v) { root.setValue("scroll.inertia_strength", v) }
-          }
-
-          StatRow {
-            visible: root.tab === 2
-            label: strings.t("device.connection")
-            value: root.connectionLabel(root.connection)
           }
 
           Column {
@@ -1995,6 +2014,7 @@ Ui.Panel {
 
             ToggleRow {
               id: batteryShowToggle
+            helpId: "batteryShowBarHelp"
               rowId: "batteryShowBar"
               visible: root.batteryAvailable
               label: strings.t("menu.batteryShowBar")
@@ -2005,6 +2025,7 @@ Ui.Panel {
 
             SliderRow {
               id: batteryLowSlider
+            helpId: "batteryLowHelp"
               rowId: "batteryLow"
               visible: root.batteryAvailable
               label: strings.t("menu.batteryLow")
@@ -2041,6 +2062,8 @@ Ui.Panel {
                 anchors.leftMargin: Style.space(6)
                 anchors.verticalCenter: parent.verticalCenter
                 text: strings.t("help.batteryPoll")
+                rowId: "batteryPollHelp"
+                hasCursor: root.rowHasCursor("batteryPollHelp")
               }
             }
 
@@ -2051,7 +2074,8 @@ Ui.Panel {
               spacing: Style.space(4)
 
               HoverHandler {
-                onHoveredChanged: if (hovered) root.setCursor("batteryPoll")
+                onHoveredChanged: if (hovered && !pollHint.containsMouse)
+                  root.setCursor("batteryPoll")
               }
 
               Repeater {
@@ -2103,6 +2127,7 @@ Ui.Panel {
 
             ToggleRow {
               id: sniperClearToggle
+            helpId: "sniperClearHelp"
               rowId: "sniperClear"
               visible: root.sniperCode > 0
               label: strings.t("menu.sniperButton")
@@ -2136,6 +2161,8 @@ Ui.Panel {
                 visible: root.sniperCode === 0
                 anchors.verticalCenter: parent.verticalCenter
                 text: strings.t("help.sniperChoose")
+                rowId: "sniperChooseHelp"
+                hasCursor: root.rowHasCursor("sniperChooseHelp")
               }
             }
 
@@ -2170,6 +2197,7 @@ Ui.Panel {
 
           SliderRow {
             id: holdSlider
+            helpId: "holdThresholdHelp"
             rowId: "holdThreshold"
             visible: root.feelTabVisible
             label: strings.t("menu.holdThreshold")
@@ -2191,7 +2219,8 @@ Ui.Panel {
             spacing: Style.space(4)
 
             HoverHandler {
-              onHoveredChanged: if (hovered) root.setCursor("autoExit")
+              onHoveredChanged: if (hovered && !autoExitHint.containsMouse)
+                root.setCursor("autoExit")
             }
 
             Item {
@@ -2214,6 +2243,8 @@ Ui.Panel {
                 anchors.leftMargin: Style.space(6)
                 anchors.verticalCenter: parent.verticalCenter
                 text: strings.t("help.autoExit")
+                rowId: "autoExitHelp"
+                hasCursor: root.rowHasCursor("autoExitHelp")
               }
             }
 
@@ -2343,10 +2374,10 @@ Ui.Panel {
         id: cursorRing
         visible: root.cursorActive && target !== null && target.visible
         property Item target: root.cursorTarget(root.cursorId)
-        x: target ? target.mapToItem(bodyContent, 0, 0).x - Style.space(4) : 0
-        y: target ? target.mapToItem(bodyContent, 0, 0).y - Style.space(2) : 0
-        width: target ? target.width + Style.space(8) : 0
-        height: target ? target.height + Style.space(4) : 0
+        x: target ? target.mapToItem(bodyContent, 0, 0).x - Style.space(8) : 0
+        y: target ? target.mapToItem(bodyContent, 0, 0).y - Style.space(6) : 0
+        width: target ? target.width + Style.space(16) : 0
+        height: target ? target.height + Style.space(12) : 0
         z: 20
         hasCursor: true
         fill: "transparent"
@@ -2375,33 +2406,32 @@ Ui.Panel {
             anchors.leftMargin: Style.space(2)
             anchors.rightMargin: Style.space(2)
             anchors.top: parent.top
-            anchors.topMargin: Style.space(4)
+            anchors.topMargin: Style.space(8)
             spacing: Style.space(2)
 
             Ui.PanelSeparator {
               width: parent.width
             }
 
-            Text {
+            Flow {
               width: parent.width
-              text: root.present ? root.connectionLabel(root.connection) : strings.t("mode.none")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.70
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              elide: Text.ElideRight
-            }
+              spacing: Style.space(10)
 
-            Text {
-              width: parent.width
-              text: strings.t("footer.keys")
-              textFormat: Text.PlainText
-              color: Color.popups.text
-              opacity: 0.48
-              font.family: Style.font.family
-              font.pixelSize: Style.font.caption
-              wrapMode: Text.WordWrap
+              Repeater {
+                model: root.footerHints
+
+                Text {
+                  required property var modelData
+                  required property int index
+                  text: String(modelData).trim()
+                    + (index < root.footerHints.length - 1 ? "  ·" : "")
+                  textFormat: Text.PlainText
+                  color: Color.popups.text
+                  opacity: 0.48
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
             }
           }
         }
@@ -2415,6 +2445,9 @@ Ui.Panel {
     id: hint
 
     property string text: ""
+    property string rowId: ""
+    property bool hasCursor: false
+    readonly property bool containsMouse: hintMouse.containsMouse
 
     width: Style.space(14)
     height: width
@@ -2429,7 +2462,7 @@ Ui.Panel {
       color: "transparent"
       border.width: 1
       border.color: Color.popups.text
-      opacity: hintMouse.containsMouse ? 0.85 : 0.4
+      opacity: (hintMouse.containsMouse || hint.hasCursor) ? 0.9 : 0.4
     }
 
     Text {
@@ -2437,7 +2470,7 @@ Ui.Panel {
       text: "?"
       textFormat: Text.PlainText
       color: Color.popups.text
-      opacity: hintMouse.containsMouse ? 0.95 : 0.45
+      opacity: (hintMouse.containsMouse || hint.hasCursor) ? 0.98 : 0.45
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -2449,10 +2482,13 @@ Ui.Panel {
       acceptedButtons: Qt.LeftButton
       cursorShape: Qt.WhatsThisCursor
       onClicked: {}
+      onContainsMouseChanged: {
+        if (containsMouse && hint.rowId !== "") root.setCursor(hint.rowId)
+      }
     }
 
     Ui.PanelToolTip {
-      visible: hintMouse.containsMouse
+      visible: hintMouse.containsMouse || hint.hasCursor
       text: hint.text
       width: Style.space(240)
       delay: 250
@@ -2723,11 +2759,14 @@ Ui.Panel {
     property bool checked: false
     property bool flash: false
     property string rowId: ""
+    property string helpId: ""
+    property Item helpIcon: hintIcon
 
     signal clicked()
 
     HoverHandler {
-      onHoveredChanged: if (hovered && toggleRow.rowId !== "") root.setCursor(toggleRow.rowId)
+      onHoveredChanged: if (hovered && !hintIcon.containsMouse && toggleRow.rowId !== "")
+        root.setCursor(toggleRow.rowId)
     }
 
     width: parent ? parent.width : 0
@@ -2760,6 +2799,8 @@ Ui.Panel {
       anchors.leftMargin: Style.space(6)
       anchors.verticalCenter: parent.verticalCenter
       text: toggleRow.help
+      rowId: toggleRow.helpId
+      hasCursor: root.rowHasCursor(toggleRow.helpId)
     }
 
     DoneMark {
@@ -2807,11 +2848,14 @@ Ui.Panel {
     property var fromSlider: null
     property bool flash: false
     property string rowId: ""
+    property string helpId: ""
+    property Item helpIcon: hintIcon
 
     signal commit(real configValue)
 
     HoverHandler {
-      onHoveredChanged: if (hovered && row.rowId !== "") root.setCursor(row.rowId)
+      onHoveredChanged: if (hovered && !hintIcon.containsMouse && row.rowId !== "")
+        root.setCursor(row.rowId)
     }
 
     Timer {
@@ -2838,8 +2882,10 @@ Ui.Panel {
 
       Text {
         id: labelText
-        width: Math.max(0, row.width - valueLabel.implicitWidth - Style.space(8)
-          - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0))
+        width: Math.min(labelText.implicitWidth, Math.max(0,
+          row.width - valueLabel.implicitWidth - Style.space(8)
+            - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0)
+            - (doneMark.visible ? doneMark.width + Style.space(8) : 0)))
         text: row.label
         textFormat: Text.PlainText
         color: Color.popups.text
@@ -2854,9 +2900,12 @@ Ui.Panel {
         anchors.leftMargin: Style.space(6)
         anchors.verticalCenter: parent.verticalCenter
         text: row.help
+        rowId: row.helpId
+        hasCursor: root.rowHasCursor(row.helpId)
       }
 
       DoneMark {
+        id: doneMark
         anchors.left: hintIcon.visible ? hintIcon.right : labelText.right
         anchors.leftMargin: Style.space(8)
         anchors.verticalCenter: parent.verticalCenter
