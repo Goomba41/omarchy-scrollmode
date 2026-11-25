@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.2] — 2026-11-25
+
+### Changed
+
+- The DPI source now sits in the section heading as `DPI · vendor` before the
+  rule. The separate source row is gone, leaving the stage grid and the
+  manual fallback with more room.
+- Block headings get a top gap only from the second visible block onward, so
+  the first block after the tabs starts flush. Battery and Buttons & Hotkeys
+  follow the same rule.
+
 ## [1.10.1] — 2026-11-25
 
 ### Added

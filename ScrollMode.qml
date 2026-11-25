@@ -1495,9 +1495,11 @@ Ui.Panel {
             width: parent.width
             spacing: Style.space(6)
 
-            Item { width: 1; height: Style.space(8) }
-
-            StatHeader { text: strings.t("menu.dpi") }
+            StatHeader {
+              text: strings.t("menu.dpi")
+              source: root.dpiSource !== "none"
+                ? root.dpiSourceLabel(root.dpiSource) : ""
+            }
 
             Grid {
               id: dpiGrid
@@ -1574,41 +1576,15 @@ Ui.Panel {
               }
             }
 
-            Item {
+            Text {
+              visible: root.dpiSource === "none"
               width: parent.width
-              height: Math.max(
-                dpiNotExposed.visible ? dpiNotExposed.implicitHeight : 0,
-                dpiSourceText.visible ? dpiSourceText.implicitHeight : 0)
-
-              Text {
-                id: dpiNotExposed
-                visible: root.dpiSource === "none"
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                width: parent.width
-                text: strings.t("dpi.notExposed")
-                textFormat: Text.PlainText
-                color: Color.popups.text
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body
-                wrapMode: Text.WordWrap
-              }
-
-              Text {
-                id: dpiSourceText
-                visible: root.dpiSource !== "none"
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.max(0, parent.width * 0.5)
-                text: root.dpiSourceLabel(root.dpiSource)
-                textFormat: Text.PlainText
-                color: Color.popups.text
-                opacity: 0.55
-                font.family: Style.font.family
-                font.pixelSize: Style.font.caption
-                horizontalAlignment: Text.AlignRight
-                elide: Text.ElideRight
-              }
+              text: strings.t("dpi.notExposed")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+              wrapMode: Text.WordWrap
             }
 
             Text {
@@ -1672,8 +1648,6 @@ Ui.Panel {
               onHovered: function(isHovered) { if (isHovered) root.setCursor("dpiClear") }
               onActivated: root.clearManualDpi()
             }
-
-            Item { width: 1; height: Style.space(8) }
           }
 
           Flickable {
@@ -2280,7 +2254,10 @@ Ui.Panel {
             width: parent.width
             spacing: Style.space(6)
 
-            StatHeader { text: strings.t("menu.battery") }
+            StatHeader {
+              text: strings.t("menu.battery")
+              topSpace: root.dpiVisible ? Style.space(12) : 0
+            }
 
             Item {
               width: parent.width
@@ -2456,10 +2433,10 @@ Ui.Panel {
             width: parent.width
             spacing: 0
 
-            Item { width: 1; height: Style.space(12) }
-
             StatHeader {
               text: strings.t("menu.buttons")
+              topSpace: (root.dpiVisible || root.batteryAvailable)
+                ? Style.space(12) : 0
             }
 
             Item { width: 1; height: Style.space(8) }
@@ -2901,12 +2878,16 @@ Ui.Panel {
     id: headerItem
 
     property string text: ""
+    property string source: ""
+    property real topSpace: 0
 
     width: parent ? parent.width : 0
-    implicitHeight: headerLabel.implicitHeight
+    implicitHeight: headerItem.topSpace
+      + Math.max(headerLabel.implicitHeight, sourceLabel.implicitHeight)
 
     Text {
       id: headerLabel
+      y: headerItem.topSpace
       text: headerItem.text
       textFormat: Text.PlainText
       color: Color.popups.text
@@ -2918,11 +2899,37 @@ Ui.Panel {
       font.letterSpacing: 0.8
     }
 
+    Text {
+      id: sourceDot
+      visible: headerItem.source !== ""
+      anchors.verticalCenter: headerLabel.verticalCenter
+      x: headerLabel.x + headerLabel.width + Style.space(6)
+      text: "·"
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.35
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
+    Text {
+      id: sourceLabel
+      visible: headerItem.source !== ""
+      anchors.verticalCenter: headerLabel.verticalCenter
+      x: sourceDot.x + sourceDot.width + Style.space(6)
+      text: headerItem.source
+      textFormat: Text.PlainText
+      color: Color.popups.text
+      opacity: 0.55
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+    }
+
     Rectangle {
-      anchors.left: headerLabel.right
+      anchors.left: sourceLabel.visible ? sourceLabel.right : headerLabel.right
       anchors.leftMargin: Style.space(8)
       anchors.right: parent.right
-      anchors.verticalCenter: parent.verticalCenter
+      anchors.verticalCenter: headerLabel.verticalCenter
       height: 1
       color: Color.popups.text
       opacity: 0.12

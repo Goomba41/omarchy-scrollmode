@@ -271,8 +271,9 @@ never writes battery settings to the device.
 ### DPI
 
 The **Device** tab for a mouse adds a **DPI** section. It lists every stage
-the mouse exposes as an even chip grid, highlights the current stage and names
-the source (`libratbag`, `vendor` or `manual`). The chip colour depends only on
+the mouse exposes as an even chip grid and highlights the current stage. The
+source (`libratbag`, `vendor` or `manual`) sits in the heading after a dot, as
+in `DPI · vendor`. The chip colour depends only on
 the DPI value, so `800` is the same blue on every mouse:
 
 | DPI | Hue | Colour |
