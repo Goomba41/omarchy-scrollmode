@@ -151,6 +151,31 @@ Item {
         ctx.arc(0, 0, 1, 0, Math.PI * 2)
         ctx.restore()
       }
+      function convexHull(points) {
+        if (points.length < 3) return points
+        var pts = points.slice().sort(function(a, b) {
+          return a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]
+        })
+        function cross(o, a, b) {
+          return (a[0] - o[0]) * (b[1] - o[1])
+            - (a[1] - o[1]) * (b[0] - o[0])
+        }
+        var lower = []
+        for (var i = 0; i < pts.length; i++) {
+          while (lower.length >= 2 && cross(lower[lower.length - 2],
+            lower[lower.length - 1], pts[i]) <= 0) lower.pop()
+          lower.push(pts[i])
+        }
+        var upper = []
+        for (var j = pts.length - 1; j >= 0; j--) {
+          while (upper.length >= 2 && cross(upper[upper.length - 2],
+            upper[upper.length - 1], pts[j]) <= 0) upper.pop()
+          upper.push(pts[j])
+        }
+        lower.pop()
+        upper.pop()
+        return lower.concat(upper)
+      }
       function roundedPolygon(points, radius) {
         var out = []
         var n = points.length
@@ -235,6 +260,21 @@ Item {
         shadow.addColorStop(1, "rgba(0,0,0,0)")
         ctx.fillStyle = shadow
         oval(cx + w * 0.06, h * 0.82, w * 0.38, h * 0.10)
+        ctx.fill()
+      }
+
+      // Fill the whole projected silhouette first. Any hairline between the
+      // front, back and side quads then shows the side colour, not the panel
+      // behind it, so the prism is always monolithic.
+      var hull = convexHull(front.concat(back))
+      if (hull.length >= 3) {
+        ctx.beginPath()
+        ctx.moveTo(hull[0][0], hull[0][1])
+        for (var h = 1; h < hull.length; h++)
+          ctx.lineTo(hull[h][0], hull[h][1])
+        ctx.closePath()
+        ctx.globalAlpha = 1
+        ctx.fillStyle = Qt.darker(cursor.color, 1.55)
         ctx.fill()
       }
 

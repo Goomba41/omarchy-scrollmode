@@ -148,7 +148,7 @@
   "stats.mouseNoDpi": "Для сравнений расстояний нужен DPI мыши. Щелчки колеса и клики уже собираются.",
   "stats.mouseNote": "Щелчки колеса — это физические события колеса; движение переводится в метры, когда известен DPI.",
   "device.limited": "Этот тип указателя распознан. Остальные настройки для него появятся позже.",
-  "footer.keys": "j/k — движение  ·  h/l — изменить  ·  Enter — выбрать  ·  1–4 — вкладки  ·  r — rescan  ·  Esc — закрыть",
+  "footer.keys": "j/k — двигать · h/l — менять · Enter — выбрать · 1–4 — вкладки · r — rescan · Esc — закрыть",
   "connection.shortUsb": "USB",
   "connection.shortReceiver": "2.4G",
   "connection.shortBluetooth": "BT",

@@ -148,7 +148,7 @@
   "stats.mouseNoDpi": "Distance comparisons need the mouse DPI. Wheel and click stats are already collected.",
   "stats.mouseNote": "Wheel notches are physical wheel events; movement uses the reported DPI when available.",
   "device.limited": "This pointer type is recognised. More settings for it will arrive in a later update.",
-  "footer.keys": "j/k move  ·  h/l adjust  ·  Enter select  ·  1–4 tabs  ·  r rescan  ·  Esc close",
+  "footer.keys": "j/k to move · h/l to adjust · Enter to select · 1–4 tabs · r to rescan · Esc to close",
   "connection.shortUsb": "USB",
   "connection.shortReceiver": "2.4G",
   "connection.shortBluetooth": "BT",

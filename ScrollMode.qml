@@ -654,7 +654,7 @@ Ui.Panel {
     if (id === "batteryShowBarHelp") return batteryShowToggle.helpIcon
     if (id === "batteryLow") return batteryLowSlider
     if (id === "batteryLowHelp") return batteryLowSlider.helpIcon
-    if (id === "batteryPoll") return batteryPollRow
+    if (id === "batteryPoll") return batteryPollGroup
     if (id === "batteryPollHelp") return pollHint
     if (id === "sniperClear") return sniperClearToggle
     if (id === "sniperClearHelp") return sniperClearToggle.helpIcon
@@ -969,7 +969,7 @@ Ui.Panel {
     Ui.PanelKeyCatcher {
       id: keys
       anchors.fill: parent
-      implicitHeight: Math.min(bodyContent.height + footerArea.height + Style.space(8),
+      implicitHeight: Math.min(bodyContent.height + footerArea.height,
         Style.space(900))
       blocked: devicePicker.popupOpen
       onMoveRequested: function(dx, dy) {
@@ -1002,7 +1002,7 @@ Ui.Panel {
           Item {
             id: bodyContent
             width: bodyFlick.width
-            height: menu.implicitHeight + Style.space(8) + Style.space(10)
+            height: menu.implicitHeight + Style.space(8)
 
       Column {
         id: menu
@@ -1330,7 +1330,7 @@ Ui.Panel {
           id: settings
           visible: root.settingsVisible
           width: parent.width
-          spacing: Style.space(10)
+          spacing: Style.space(4)
 
           Row {
             width: parent.width
@@ -2067,37 +2067,44 @@ Ui.Panel {
               }
             }
 
-            Row {
-              id: batteryPollRow
+            Item {
+              id: batteryPollGroup
               visible: root.batteryAvailable
               width: parent.width
-              spacing: Style.space(4)
+              height: batteryPollRow.height + Style.space(12)
 
               HoverHandler {
-                onHoveredChanged: if (hovered && !pollHint.containsMouse)
-                  root.setCursor("batteryPoll")
+                onHoveredChanged: if (hovered) root.setCursor("batteryPoll")
               }
 
-              Repeater {
-                model: [
-                  { value: "60", label: "1" },
-                  { value: "300", label: "5" },
-                  { value: "900", label: "15" },
-                  { value: "1800", label: "30" }
-                ]
+              Row {
+                id: batteryPollRow
+                x: Style.space(6)
+                y: Style.space(6)
+                width: parent.width - Style.space(12)
+                spacing: Style.space(4)
 
-                delegate: Ui.Button {
-                  required property var modelData
+                Repeater {
+                  model: [
+                    { value: "60", label: "1" },
+                    { value: "300", label: "5" },
+                    { value: "900", label: "15" },
+                    { value: "1800", label: "30" }
+                  ]
 
-                  width: (parent.width - 3 * parent.spacing) / 4
-                  height: Style.spacing.controlHeight
-                  text: strings.t("battery.minutes").arg(modelData.label)
-                  bordered: true
-                  selected: String(Number(root.value("battery.poll_seconds", 300)))
-                    === modelData.value
-                  foreground: Color.popups.text
-                  onHovered: function(isHovered) { if (isHovered) root.setCursor("batteryPoll") }
-                  onClicked: root.setValue("battery.poll_seconds", Number(modelData.value))
+                  delegate: Ui.Button {
+                    required property var modelData
+
+                    width: (parent.width - 3 * parent.spacing) / 4
+                    height: Style.spacing.controlHeight
+                    text: strings.t("battery.minutes").arg(modelData.label)
+                    bordered: true
+                    selected: String(Number(root.value("battery.poll_seconds", 300)))
+                      === modelData.value
+                    foreground: Color.popups.text
+                    onHovered: function(isHovered) { if (isHovered) root.setCursor("batteryPoll") }
+                    onClicked: root.setValue("battery.poll_seconds", Number(modelData.value))
+                  }
                 }
               }
             }
@@ -2223,8 +2230,11 @@ Ui.Panel {
                 root.setCursor("autoExit")
             }
 
+            Item { width: 1; height: Style.space(6) }
+
             Item {
-              width: parent.width
+              x: Style.space(6)
+              width: parent.width - Style.space(12)
               height: Math.max(autoExitLabel.implicitHeight, autoExitHint.height)
 
               Text {
@@ -2249,7 +2259,8 @@ Ui.Panel {
             }
 
             Row {
-              width: parent.width
+              x: Style.space(6)
+              width: parent.width - Style.space(12)
               spacing: Style.space(4)
 
               Repeater {
@@ -2287,6 +2298,8 @@ Ui.Panel {
                 }
               }
             }
+
+            Item { width: 1; height: Style.space(6) }
           }
 
           Ui.PanelSeparator {
@@ -2374,10 +2387,10 @@ Ui.Panel {
         id: cursorRing
         visible: root.cursorActive && target !== null && target.visible
         property Item target: root.cursorTarget(root.cursorId)
-        x: target ? target.mapToItem(bodyContent, 0, 0).x + Style.space(2) : 0
-        y: target ? target.mapToItem(bodyContent, 0, 0).y + Style.space(2) : 0
-        width: target ? Math.max(0, target.width - Style.space(4)) : 0
-        height: target ? Math.max(0, target.height - Style.space(4)) : 0
+        x: target ? target.mapToItem(bodyContent, 0, 0).x : 0
+        y: target ? target.mapToItem(bodyContent, 0, 0).y : 0
+        width: target ? target.width : 0
+        height: target ? target.height : 0
         z: 20
         hasCursor: true
         fill: "transparent"
@@ -2407,7 +2420,7 @@ Ui.Panel {
             anchors.rightMargin: Style.space(2)
             anchors.top: parent.top
             anchors.topMargin: Style.space(8)
-            spacing: Style.space(6)
+            spacing: Style.space(8)
 
             Ui.PanelSeparator {
               width: parent.width
@@ -2416,7 +2429,7 @@ Ui.Panel {
             Grid {
               id: footerGrid
               width: parent.width
-              columns: 3
+              columns: 2
               columnSpacing: Style.space(4)
               rowSpacing: Style.space(2)
 
@@ -2425,9 +2438,11 @@ Ui.Panel {
 
                 Text {
                   required property var modelData
+                  required property int index
                   width: (footerGrid.width - (footerGrid.columns - 1) * footerGrid.columnSpacing)
                     / footerGrid.columns
-                  text: String(modelData).trim()
+                  text: (index % footerGrid.columns === 0 ? "" : "·  ")
+                    + String(modelData).trim()
                   textFormat: Text.PlainText
                   color: Color.popups.text
                   opacity: 0.48

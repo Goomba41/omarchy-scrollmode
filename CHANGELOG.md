@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.3] — 2026-11-25
+
+### Changed
+
+- Footer hints now sit in a centred two-column grid with a dot between the
+  hints on each row. The text is shorter and more direct (`j/k to move`,
+  `Enter to select`, `r to rescan`, …), and no hint is elided or split.
+- Focus frames sit on the element bounds with a consistent 6 px content inset.
+  Grouped chip rows have padded wrappers, so the frame no longer cuts through
+  the first or last chip. Question-mark hints keep a 22 px slot.
+- Footer separator spacing is balanced at 8 px above and below, and the row
+  spacing in Feel/Device is tighter so controls do not drift apart.
+- The cursor silhouette is filled before its faces. Any hairline seam between
+  the front, back and side quads now shows the side colour, never the panel.
+
+### Fixed
+
+- Removed the last phantom micro-scroll when the settings already fit above
+  the footer.
+
 ## [1.9.2] — 2026-11-25
 
 ### Fixed
