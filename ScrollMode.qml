@@ -2057,7 +2057,7 @@ Ui.Panel {
                   root.setCursor("batteryPoll")
               }
 
-              Item { width: 1; height: Style.space(4) }
+              Item { width: 1; height: Style.space(2) }
 
               Item {
                 x: Style.space(6)
@@ -2139,6 +2139,8 @@ Ui.Panel {
             visible: root.tab === 2 && root.supportsButtons
             width: parent.width
             spacing: 0
+
+            Item { width: 1; height: Style.space(12) }
 
             StatHeader {
               text: strings.t("menu.buttons")
@@ -2250,7 +2252,7 @@ Ui.Panel {
                 root.setCursor("autoExit")
             }
 
-            Item { width: 1; height: Style.space(4) }
+            Item { width: 1; height: Style.space(2) }
 
             Item {
               x: Style.space(6)
@@ -3045,6 +3047,6 @@ Ui.Panel {
       wrapMode: Text.WordWrap
     }
 
-    Item { width: 1; height: Style.space(4) }
+    Item { width: 1; height: Style.space(2) }
   }
 }

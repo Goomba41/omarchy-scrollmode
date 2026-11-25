@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.7] — 2026-11-25
+
+### Changed
+
+- Slider focus frames use a 2 px bottom pad and a 4 px top pad, balancing the
+  visual weight of the label and the slider track.
+- Auto exit and Check every use a 2 px top pad and a 4 px bottom pad, removing
+  the extra air above them while keeping the chip row from touching the frame.
+- The Buttons & Hotkeys heading gets a 16 px gap from the previous block.
+
 ## [1.9.6] — 2026-11-25
 
 ### Changed
