@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.4] — 2026-11-25
+
+### Changed
+
+- Footer dots now sit in their own centred column between two equal hint
+  halves, so they read as separators rather than prefixes.
+- The settings content has an 8 px bottom pad matched to the 8 px gap above
+  and below the footer separator.
+- The Buttons & Hotkeys section has breathing room between its heading, hint
+  lines, Open config button and Reset button.
+
+### Fixed
+
+- Removed the remaining translucent highlights from the cursor: the bevel and
+  front edge are opaque colours and the soft specular overlay is gone. The
+  silhouette fill underneath guarantees a solid prism at every angle.
+
 ## [1.9.3] — 2026-11-25
 
 ### Changed

@@ -311,7 +311,8 @@ Item {
         ctx.lineTo(back[bo][0], back[bo][1])
       ctx.closePath()
       ctx.lineWidth = Math.max(1, w * 0.016)
-      ctx.strokeStyle = "rgba(255,255,255,0.24)"
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = Qt.lighter(cursor.color, 1.22)
       ctx.stroke()
 
       // Front face. The gradient is projected with the face, so it turns with
@@ -330,26 +331,6 @@ Item {
       ctx.fillStyle = face
       ctx.fill()
 
-      // Soft specular spot, clipped to the face so it shrinks naturally as
-      // the arrow turns edge-on.
-      ctx.save()
-      ctx.beginPath()
-      ctx.moveTo(front[0][0], front[0][1])
-      for (var k = 1; k < front.length; k++)
-        ctx.lineTo(front[k][0], front[k][1])
-      ctx.closePath()
-      ctx.clip()
-      var hp = project([7.5, 6.2])
-      var spotAmount = Math.pow(Math.max(0, ca), 0.7)
-      var spot = ctx.createRadialGradient(hp[0], hp[1], 0,
-        hp[0], hp[1], w * 0.20)
-      spot.addColorStop(0, "rgba(255,255,255," + (0.30 * spotAmount) + ")")
-      spot.addColorStop(0.45, "rgba(255,255,255," + (0.08 * spotAmount) + ")")
-      spot.addColorStop(1, "rgba(255,255,255,0)")
-      ctx.fillStyle = spot
-      ctx.fillRect(0, 0, w, h)
-      ctx.restore()
-
       // A light leading edge is always present, so a profile view still reads.
       ctx.beginPath()
       ctx.moveTo(front[0][0], front[0][1])
@@ -357,7 +338,8 @@ Item {
         ctx.lineTo(front[m][0], front[m][1])
       ctx.closePath()
       ctx.lineWidth = Math.max(1, w * 0.016)
-      ctx.strokeStyle = "rgba(255,255,255,0.30)"
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = Qt.lighter(cursor.color, 1.35)
       ctx.stroke()
     }
 

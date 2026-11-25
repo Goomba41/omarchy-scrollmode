@@ -1002,7 +1002,7 @@ Ui.Panel {
           Item {
             id: bodyContent
             width: bodyFlick.width
-            height: menu.implicitHeight + Style.space(8)
+            height: menu.implicitHeight + Style.space(8) + Style.space(8)
 
       Column {
         id: menu
@@ -2310,7 +2310,9 @@ Ui.Panel {
           Column {
             visible: root.tab === 2 && root.supportsButtons
             width: parent.width
-            spacing: Style.space(2)
+            spacing: Style.space(6)
+
+            Item { width: 1; height: Style.space(4) }
 
             Text {
               width: parent.width
@@ -2344,6 +2346,8 @@ Ui.Panel {
               font.pixelSize: Style.font.caption
               wrapMode: Text.WordWrap
             }
+
+            Item { width: 1; height: Style.space(4) }
           }
 
           ActionButton {
@@ -2353,6 +2357,12 @@ Ui.Panel {
             idleText: strings.t("menu.openConfig")
             onHovered: function(isHovered) { if (isHovered) root.setCursor("openConfig") }
             onActivated: Quickshell.execDetached(["omarchy-launch-editor", root.cfgPath])
+          }
+
+          Item {
+            visible: root.tab === 2 && root.supportsButtons
+            width: 1
+            height: Style.space(4)
           }
 
           Ui.Button {
@@ -2419,37 +2429,61 @@ Ui.Panel {
             anchors.leftMargin: Style.space(2)
             anchors.rightMargin: Style.space(2)
             anchors.top: parent.top
-            anchors.topMargin: Style.space(8)
+            anchors.topMargin: 0
             spacing: Style.space(8)
 
             Ui.PanelSeparator {
               width: parent.width
             }
 
-            Grid {
-              id: footerGrid
+            Column {
+              id: footerHintRows
               width: parent.width
-              columns: 2
-              columnSpacing: Style.space(4)
-              rowSpacing: Style.space(2)
+              spacing: Style.space(2)
 
               Repeater {
-                model: root.footerHints
+                model: Math.ceil(root.footerHints.length / 2)
 
-                Text {
-                  required property var modelData
+                Row {
+                  id: footerHintRow
                   required property int index
-                  width: (footerGrid.width - (footerGrid.columns - 1) * footerGrid.columnSpacing)
-                    / footerGrid.columns
-                  text: (index % footerGrid.columns === 0 ? "" : "·  ")
-                    + String(modelData).trim()
-                  textFormat: Text.PlainText
-                  color: Color.popups.text
-                  opacity: 0.48
-                  font.family: Style.font.family
-                  font.pixelSize: Style.font.caption
-                  horizontalAlignment: Text.AlignHCenter
-                  elide: Text.ElideRight
+                  width: footerHintRows.width
+
+                  Text {
+                    width: (footerHintRow.width - Style.space(18)) / 2
+                    text: root.footerHints[index * 2] || ""
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.48
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignRight
+                    elide: Text.ElideRight
+                  }
+
+                  Text {
+                    width: Style.space(18)
+                    text: (index * 2 + 1 < root.footerHints.length) ? "·" : ""
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.35
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignHCenter
+                  }
+
+                  Text {
+                    width: (footerHintRow.width - Style.space(18)) / 2
+                    text: (index * 2 + 1 < root.footerHints.length)
+                      ? root.footerHints[index * 2 + 1] : ""
+                    textFormat: Text.PlainText
+                    color: Color.popups.text
+                    opacity: 0.48
+                    font.family: Style.font.family
+                    font.pixelSize: Style.font.caption
+                    horizontalAlignment: Text.AlignLeft
+                    elide: Text.ElideRight
+                  }
                 }
               }
             }
