@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.2] — 2026-11-25
+
+### Fixed
+
+- Focus frames now stay inside each element's own bounds, 2 px in, with a
+  consistent 6 px content inset. Adjacent buttons and rows no longer receive a
+  frame that spills onto them, and full-width sliders keep all four borders.
+- Help question marks reserve a 22 px focus slot, so their frame stays inside
+  the label row while they remain part of the keyboard cursor cycle.
+- Footer hints are now a centred three-column grid: each hint stays whole, no
+  line ends with a dot, and there is a clear gap below the separator.
+- Removed the phantom micro-scroll that appeared when the content already fit
+  above the footer.
+
 ## [1.9.1] — 2026-11-25
 
 ### Fixed

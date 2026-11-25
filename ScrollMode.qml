@@ -969,7 +969,7 @@ Ui.Panel {
     Ui.PanelKeyCatcher {
       id: keys
       anchors.fill: parent
-      implicitHeight: Math.min(menu.implicitHeight + footerArea.height + Style.space(8),
+      implicitHeight: Math.min(bodyContent.height + footerArea.height + Style.space(8),
         Style.space(900))
       blocked: devicePicker.popupOpen
       onMoveRequested: function(dx, dy) {
@@ -2374,10 +2374,10 @@ Ui.Panel {
         id: cursorRing
         visible: root.cursorActive && target !== null && target.visible
         property Item target: root.cursorTarget(root.cursorId)
-        x: target ? target.mapToItem(bodyContent, 0, 0).x - Style.space(8) : 0
-        y: target ? target.mapToItem(bodyContent, 0, 0).y - Style.space(6) : 0
-        width: target ? target.width + Style.space(16) : 0
-        height: target ? target.height + Style.space(12) : 0
+        x: target ? target.mapToItem(bodyContent, 0, 0).x + Style.space(2) : 0
+        y: target ? target.mapToItem(bodyContent, 0, 0).y + Style.space(2) : 0
+        width: target ? Math.max(0, target.width - Style.space(4)) : 0
+        height: target ? Math.max(0, target.height - Style.space(4)) : 0
         z: 20
         hasCursor: true
         fill: "transparent"
@@ -2407,29 +2407,34 @@ Ui.Panel {
             anchors.rightMargin: Style.space(2)
             anchors.top: parent.top
             anchors.topMargin: Style.space(8)
-            spacing: Style.space(2)
+            spacing: Style.space(6)
 
             Ui.PanelSeparator {
               width: parent.width
             }
 
-            Flow {
+            Grid {
+              id: footerGrid
               width: parent.width
-              spacing: Style.space(10)
+              columns: 3
+              columnSpacing: Style.space(4)
+              rowSpacing: Style.space(2)
 
               Repeater {
                 model: root.footerHints
 
                 Text {
                   required property var modelData
-                  required property int index
+                  width: (footerGrid.width - (footerGrid.columns - 1) * footerGrid.columnSpacing)
+                    / footerGrid.columns
                   text: String(modelData).trim()
-                    + (index < root.footerHints.length - 1 ? "  ·" : "")
                   textFormat: Text.PlainText
                   color: Color.popups.text
                   opacity: 0.48
                   font.family: Style.font.family
                   font.pixelSize: Style.font.caption
+                  horizontalAlignment: Text.AlignHCenter
+                  elide: Text.ElideRight
                 }
               }
             }
@@ -2449,7 +2454,7 @@ Ui.Panel {
     property bool hasCursor: false
     readonly property bool containsMouse: hintMouse.containsMouse
 
-    width: Style.space(14)
+    width: Style.space(22)
     height: width
     implicitWidth: width
     implicitHeight: height
@@ -2457,7 +2462,9 @@ Ui.Panel {
     z: 2
 
     Rectangle {
-      anchors.fill: parent
+      width: Style.space(14)
+      height: width
+      anchors.centerIn: parent
       radius: width / 2
       color: "transparent"
       border.width: 1
@@ -2477,7 +2484,9 @@ Ui.Panel {
 
     MouseArea {
       id: hintMouse
-      anchors.fill: parent
+      width: Style.space(14)
+      height: width
+      anchors.centerIn: parent
       hoverEnabled: true
       acceptedButtons: Qt.LeftButton
       cursorShape: Qt.WhatsThisCursor
@@ -2761,6 +2770,7 @@ Ui.Panel {
     property string rowId: ""
     property string helpId: ""
     property Item helpIcon: hintIcon
+    readonly property real inset: Style.space(6)
 
     signal clicked()
 
@@ -2770,7 +2780,7 @@ Ui.Panel {
     }
 
     width: parent ? parent.width : 0
-    implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight) + Style.space(8)
+    implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight) + Style.space(12)
 
     Timer {
       interval: 1200
@@ -2781,8 +2791,9 @@ Ui.Panel {
     Text {
       id: toggleLabel
       anchors.left: parent.left
+      anchors.leftMargin: toggleRow.inset
       anchors.verticalCenter: parent.verticalCenter
-      width: Math.min(implicitWidth, Math.max(0, toggleRow.width - toggleSwitch.width - Style.space(8)
+      width: Math.min(implicitWidth, Math.max(0, toggleRow.width - toggleSwitch.width - toggleRow.inset * 2 - Style.space(8)
         - (toggleRow.flash ? toggleDone.width + Style.space(8) : 0)
         - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0)))
       text: toggleRow.label
@@ -2814,6 +2825,7 @@ Ui.Panel {
     Ui.ToggleSwitch {
       id: toggleSwitch
       anchors.right: parent.right
+      anchors.rightMargin: toggleRow.inset
       anchors.verticalCenter: parent.verticalCenter
       checked: toggleRow.checked
       interactive: false
@@ -2850,6 +2862,7 @@ Ui.Panel {
     property string rowId: ""
     property string helpId: ""
     property Item helpIcon: hintIcon
+    readonly property real inset: Style.space(6)
 
     signal commit(real configValue)
 
@@ -2869,6 +2882,8 @@ Ui.Panel {
     width: parent ? parent.width : 0
     spacing: Style.space(3)
 
+    Item { width: 1; height: Style.space(6) }
+
     function snap(value) {
       var stepped = Math.round(value / step) * step
       var factor = Math.pow(10, decimals)
@@ -2877,13 +2892,14 @@ Ui.Panel {
     }
 
     Item {
-      width: row.width
+      x: row.inset
+      width: row.width - row.inset * 2
       height: Math.max(labelText.implicitHeight, valueLabel.implicitHeight)
 
       Text {
         id: labelText
         width: Math.min(labelText.implicitWidth, Math.max(0,
-          row.width - valueLabel.implicitWidth - Style.space(8)
+          parent.width - valueLabel.implicitWidth - Style.space(8)
             - (hintIcon.visible ? hintIcon.width + Style.space(6) : 0)
             - (doneMark.visible ? doneMark.width + Style.space(8) : 0)))
         text: row.label
@@ -2925,7 +2941,8 @@ Ui.Panel {
     }
 
     Ui.PanelSlider {
-      width: row.width
+      x: row.inset
+      width: row.width - row.inset * 2
       bar: root.bar
       minimum: row.from
       maximum: row.to
@@ -2942,7 +2959,8 @@ Ui.Panel {
 
     Text {
       visible: row.hint !== ""
-      width: row.width
+      x: row.inset
+      width: row.width - row.inset * 2
       text: row.hint
       textFormat: Text.PlainText
       color: Color.popups.text
@@ -2951,5 +2969,7 @@ Ui.Panel {
       font.pixelSize: Style.font.caption
       wrapMode: Text.WordWrap
     }
+
+    Item { width: 1; height: Style.space(6) }
   }
 }
