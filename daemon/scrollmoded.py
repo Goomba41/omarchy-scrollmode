@@ -45,6 +45,8 @@ except ImportError:  # pragma: no cover - reported before anything else runs
     )
     raise SystemExit(1)
 
+import dpi as dpi_providers
+
 APP = "omarchy-scrollmode"
 RUNTIME_DIR = os.environ.get("SCROLLMODE_RUNTIME_DIR", "/run/omarchy-scrollmode")
 STATE_PATH = os.path.join(RUNTIME_DIR, "state")
@@ -155,6 +157,10 @@ DEFAULTS = {
         "show_bar": True,
         "low_percent": 20,
         "poll_seconds": 300,
+    },
+    "dpi": {
+        "ratbag_device": "",
+        "manual": {},
     },
 }
 
@@ -1140,6 +1146,8 @@ def default_trackball_stats() -> dict:
 def default_mouse_stats() -> dict:
     return {
         "counts": 0.0,
+        "distance_m": 0.0,
+        "distance_migrated": False,
         "wheel": 0.0,
         "clicks": 0,
         "active_ms": 0.0,
@@ -1206,6 +1214,15 @@ class Daemon:
         self.cfg = load_config_or_defaults(config_path)
         self.converter = ScrollConverter()
         self.converter.configure(self.cfg)
+        self.dpi_manager = dpi_providers.DpiManager(
+            os.path.join(STATE_DIR, "dpi.json"), self.cfg, logger=log
+        )
+        self.dpi_monitor = dpi_providers.VendorMonitor(self.on_vendor_dpi, log)
+        self.dpi_info = dpi_providers.none_info()
+        self.dpi_dirty = False
+        self.dpi_force = False
+        self.last_dpi_at = 0.0
+        self.last_dpi_id = ""
 
         self.mode = "pointer"
         self.dev: evdev.InputDevice | None = None
@@ -1402,6 +1419,39 @@ class Daemon:
             self.battery = unavailable_battery()
         self.battery_dirty = True
 
+    def current_dpi(self) -> int:
+        try:
+            return int(self.dpi_info.get("dpi") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def on_vendor_dpi(self, device_id: str, stage: int) -> None:
+        """Called from the vendor monitor thread with a new DPI stage."""
+        value = self.dpi_manager.note_vendor_stage(device_id, stage)
+        if value > 0:
+            log(f"vendor DPI stage {stage + 1} · {value} DPI")
+        if device_id == self.active_id:
+            self.dpi_dirty = True
+
+    def update_dpi(self, name: str, raw_name: str, force: bool = False) -> None:
+        now = time.monotonic()
+        changed = self.active_id != self.last_dpi_id
+        if changed:
+            self.last_dpi_id = self.active_id
+            self.last_dpi_at = 0.0
+        if not (force or changed or now - self.last_dpi_at >= 15.0):
+            return
+        self.last_dpi_at = now
+        self.dpi_info = self.dpi_manager.snapshot(
+            self.active_id,
+            name,
+            raw_name,
+            self.device_kind,
+            force=force or changed,
+            allow_ratbag=self.mode == "pointer",
+        )
+        self.dpi_monitor.set_target(self.active_id, name, raw_name)
+
     def refresh_status(self, force: bool = False) -> None:
         # Enumerating every /dev/input node costs a few hundred milliseconds on
         # a normal machine. That is invisible in pointer mode (the device is not
@@ -1430,6 +1480,7 @@ class Daemon:
             self.empty_scans = 0
         listed = []
         active_name = ""
+        active_raw = ""
         active_kind = ""
         active_code = "UN"
         active_confidence = "low"
@@ -1483,6 +1534,7 @@ class Daemon:
             })
             if device["id"] == self.active_id:
                 active_name = name
+                active_raw = str(device.get("raw") or "")
                 active_kind = kind
                 active_code = code
                 active_confidence = confidence
@@ -1493,6 +1545,8 @@ class Daemon:
         self.supports_scroll = self.device_kind in ("trackball", "unknown")
         self.supports_stats = self.device_kind in ("trackball", "mouse")
         self.supports_buttons = self.device_kind in ("trackball", "unknown")
+        self.update_dpi(active_name, active_raw, force=self.dpi_force)
+        self.dpi_force = False
 
         configured = self.sniper_button_code()
         buttons: set[int] = set()
@@ -1529,6 +1583,13 @@ class Daemon:
             "learnCode": self.learn_code,
             "learnError": self.learn_error,
             "battery": self.battery,
+            "dpi": self.dpi_info.get("dpi", 0),
+            "dpiStages": self.dpi_info.get("stages", []),
+            "dpiSource": self.dpi_info.get("source", "none"),
+            "dpiWritable": bool(self.dpi_info.get("writable", False)),
+            "dpiRange": self.dpi_info.get("range"),
+            "dpiDevice": self.dpi_info.get("device", ""),
+            "dpiTools": self.dpi_info.get("tools") or self.dpi_manager.tools(),
         }
         text = json.dumps(status, ensure_ascii=False)
         # Compare with the file instead of an in-memory cache: a restarting
@@ -1740,6 +1801,9 @@ class Daemon:
             return
         self.converter.configure(self.cfg)
         self.converter.speed = self._speed()
+        self.dpi_manager.reload_config(self.cfg)
+        self.last_dpi_at = 0.0
+        self.dpi_force = True
         self.battery_thread.wake()
         log("config reloaded")
 
@@ -1908,6 +1972,26 @@ class Daemon:
         except OSError as exc:
             log(f"cannot write {self.stats_path}: {exc}")
 
+    @staticmethod
+    def counts_to_meters(counts: float, dpi_value: int) -> float:
+        if dpi_value <= 0:
+            return 0.0
+        return float(counts) / float(dpi_value) * 0.0254
+
+    def migrate_mouse_distance(self, stats: dict, dpi_value: int) -> None:
+        """Fill distance_m from raw counts once, when the DPI first becomes known."""
+        stats["distance_m"] = self.counts_to_meters(
+            float(stats.get("counts") or 0.0), dpi_value
+        )
+        for day in (stats.get("days") or {}).values():
+            if isinstance(day, dict):
+                day["distance_m"] = self.counts_to_meters(
+                    float(day.get("counts") or 0.0), dpi_value
+                )
+        stats["distance_migrated"] = True
+        stats["dpi"] = dpi_value
+        log(f"mouse distance migrated at {dpi_value} DPI")
+
     def record_raw_stats(self, frame: list) -> None:
         """Count physical pointer movement in every mode, without grabbing."""
         if self.device_kind not in ("trackball", "mouse"):
@@ -1946,8 +2030,15 @@ class Daemon:
 
         if self.device_kind == "mouse":
             stats = self.stats["mouse"]
+            dpi_value = self.current_dpi()
+            if dpi_value > 0 and not stats.get("distance_migrated"):
+                self.migrate_mouse_distance(stats, dpi_value)
             distance = math.hypot(dx, dy)
+            meters = self.counts_to_meters(distance, dpi_value)
             stats["counts"] = float(stats.get("counts") or 0.0) + distance
+            if dpi_value > 0:
+                stats["dpi"] = dpi_value
+                stats["distance_m"] = float(stats.get("distance_m") or 0.0) + meters
             stats["wheel"] = float(stats.get("wheel") or 0.0) + wheel
             stats["clicks"] = int(stats.get("clicks") or 0) + clicks
             stats["up"] = float(stats.get("up") or 0.0) + max(0.0, -dy)
@@ -1963,9 +2054,12 @@ class Daemon:
             days = stats["days"]
             day = days.get(date)
             if not isinstance(day, dict):
-                day = {"counts": 0.0, "wheel": 0.0, "clicks": 0, "ms": 0.0}
+                day = {"counts": 0.0, "distance_m": 0.0,
+                       "wheel": 0.0, "clicks": 0, "ms": 0.0}
                 days[date] = day
             day["counts"] = float(day.get("counts") or 0.0) + distance
+            if dpi_value > 0:
+                day["distance_m"] = float(day.get("distance_m") or 0.0) + meters
             day["wheel"] = float(day.get("wheel") or 0.0) + wheel
             day["clicks"] = int(day.get("clicks") or 0) + clicks
             day["ms"] = float(day.get("ms") or 0.0) + duration * 1000.0
@@ -2140,6 +2234,7 @@ class Daemon:
             return self.mode
         if verb == "rescan":
             self.rescan_requested = True
+            self.dpi_force = True
             return self.mode
         if verb == "learn":
             if arg == "cancel":
@@ -2205,6 +2300,10 @@ class Daemon:
         if self.battery_dirty:
             self.battery_dirty = False
             self.last_scan = 0.0
+        if self.dpi_dirty:
+            self.dpi_dirty = False
+            self.last_scan = 0.0
+            self.last_dpi_at = 0.0
         if self.learn_error and self.learn_error_until and now > self.learn_error_until:
             self.learn_error = ""
             self.learn_error_until = 0.0
@@ -2257,6 +2356,7 @@ class Daemon:
     def run(self) -> None:
         self.prepare_runtime()
         self.battery_thread.start()
+        self.dpi_monitor.start()
         signal.signal(signal.SIGTERM, self._stop)
         signal.signal(signal.SIGINT, self._stop)
         signal.signal(signal.SIGHUP, self._reload)
@@ -2388,6 +2488,7 @@ class Daemon:
     def shutdown(self) -> None:
         self.running = False
         self.battery_thread.stop()
+        self.dpi_monitor.stop()
         if self.stats_dirty:
             self.save_stats()
         self.deactivate()

@@ -48,12 +48,19 @@ settings on a left click.
   the bar ball, a battery badge in the panel header, and charge settings in the
   Device tab. Reads Logitech HID++ battery data, keeps the last known value
   while the mouse sleeps, and never writes to the device.
+- **DPI on mice**: the Device tab shows every DPI stage the mouse exposes, the
+  current stage, its source and range. Values come from libratbag when it
+  supports the mouse, from a vendor HID report where one is known (Wings), or
+  from a manual override. Colours are derived from the DPI number alone, so the
+  same DPI always looks the same on every mouse.
 - **English and Russian**, following the Omarchy language setting.
 
 ## Requirements
 
 - Omarchy (Hyprland + the Quickshell bar).
 - Arch `python-evdev`: `sudo pacman -S --needed python-evdev`.
+- Optional for DPI: `libratbag` (and `piper` for its GUI). The daemon works
+  without them and uses vendor parsers or a manual DPI where available.
 - Root once at install time: the daemon reads `/dev/input/event*` and creates a
   `uinput` device.
 
@@ -261,6 +268,45 @@ them entirely. When the mouse is asleep or the receiver is busy the last known
 value is kept and marked "last known" rather than disappearing. The daemon
 never writes battery settings to the device.
 
+### DPI
+
+The **Device** tab for a mouse adds a **DPI** section. It lists every stage
+the mouse exposes as a chip, highlights the current stage, names the source
+(`libratbag`, `vendor` or `manual`) and shows the range and stage count. The
+chip colour depends only on the DPI value, so `800` is the same blue on every
+mouse:
+
+| DPI | Hue | Colour |
+|---:|---:|---|
+| 400 | 160° | green |
+| 800 | 240° | blue |
+| 1600 | 320° | magenta |
+| 2400 | 7° | red |
+| 3200 | 40° | orange |
+| 6400 | 120° | green |
+| 12800 | 200° | cyan |
+
+Providers are tried in this order:
+
+1. **libratbag / ratbagd** through `ratbagctl`. This is the broadest path; the
+   daemon matches the device by name or the `dpi.ratbag_device` override. It is
+   optional and never starts or writes to ratbagd on its own. If the package is
+   installed but the service is stopped, the panel offers **Start libratbag**.
+2. **Vendor HID report.** The Wings Tech Gaming Mouse reports its current DPI
+   stage as `04 a2 02 <stage> 00 <code> <code>` when its DPI button is pressed.
+   Known stages are `900/1800/2700/5400/7200/14000/21000`. The stage is cached
+   in `/var/lib/omarchy-scrollmode/dpi.json`, so pressing the button once is
+   enough for the current stage to survive restarts.
+3. **Manual.** `omarchy-scrollmode dpi set 1200` stores a value for the active
+   mouse. It is used for distance statistics when nothing can read the device.
+4. **None.** The section says that the mouse does not expose DPI and movement
+   remains in raw counts.
+
+Trackballs never show this section. This release only reads DPI; changing it
+from the panel is a later step. When the section says the DPI is not exposed,
+it offers **Install libratbag** or **Open Piper** / **Install Piper** depending
+on what is already on the system.
+
 ### Stats
 
 <p align="center">
@@ -279,8 +325,11 @@ the current lap, trip or orbit, with the number already completed in brackets.
 
 For a mouse the same tab shows **movement, wheel notches/pages, clicks, active
 time and days**. Mouse movement is collected in pointer mode from the physical
-device without grabbing it. The Earth/Moon/Sun ladder is shown when the mouse
-reports a DPI; otherwise movement stays in raw counts and the tab says so.
+device without grabbing it. When the DPI is known, each frame is converted to
+metres immediately and stored in `distance_m`, so changing DPI later never
+rewrites the distance already recorded. Existing counts are migrated once at
+the first known DPI. Without a DPI, movement stays in raw counts and the tab
+says so; the Earth/Moon/Sun ladder appears as soon as distance is available.
 
 It collects automatically and is stored in
 `/var/lib/omarchy-scrollmode/stats.json` (plain readable JSON, no cursor
@@ -321,8 +370,8 @@ capability flags to show only the applicable parts:
 
 - **Trackball** — Scroll, Feel, Device and Stats; battery when wireless.
 - **Mouse** — Device and Stats only. The Device tab shows the picker, battery
-  when wireless, and a note that more mouse settings are coming. Scroll/Feel,
-  sniper and hotkeys are hidden; the tab content is also gated by
+  when wireless, and the DPI section when the mouse exposes its resolution.
+  Scroll/Feel, sniper and hotkeys are hidden; the tab content is also gated by
   `supportsScroll`, so it cannot leak through while the daemon switches
   devices.
 - **Trackpad / tablet / unknown** — Device only for now; unknown pointers keep
@@ -395,6 +444,11 @@ button, and the bar icon is dimmed:
     "show_bar": true,           // draw the charge ring on the bar ball
     "low_percent": 20,          // badge/ring turn urgent at or below this
     "poll_seconds": 300         // seconds between battery reads (30-3600)
+  },
+
+  "dpi": {
+    "ratbag_device": "",        // force a ratbagctl device id or name
+    "manual": {}                // per-device DPI fallback, filled by `dpi set`
   }
 }
 ```
@@ -415,6 +469,9 @@ omarchy-scrollmode hotkey   # rewrite the Hyprland bindings
 ```sh
 omarchy-scrollmode toggle        # pointer <-> scroll
 omarchy-scrollmode battery       # print the mouse battery
+omarchy-scrollmode dpi           # print the DPI view, stages and provider
+omarchy-scrollmode dpi set <n>   # manual DPI for the active mouse
+omarchy-scrollmode dpi clear     # remove the manual DPI override
 omarchy-scrollmode sniper        # scroll <-> sniper (no-op in pointer)
 omarchy-scrollmode on | off      # force scroll or pointer
 omarchy-scrollmode status        # print the current mode
@@ -513,6 +570,7 @@ released when the process exits.
 /run/omarchy-scrollmode/control.sock CLI control socket (0600, user-owned)
 
 /var/lib/omarchy-scrollmode/stats.json  cumulative statistics for the Stats tab
+/var/lib/omarchy-scrollmode/dpi.json    cached vendor DPI stage per device
 ```
 
 ## Development
@@ -520,6 +578,7 @@ released when the process exits.
 ```sh
 python3 daemon/scrollmoded.py --selftest   # converter math
 python3 tests/test_frame.py                # frame -> uinput path, tap/hold, clicks
+python3 tests/test_dpi.py                  # vendor reports, ratbag parsing, provider order
 omarchy plugin validate .                  # manifest + entry points
 ```
 
@@ -529,7 +588,9 @@ The repository layout:
 | --- | --- |
 | `manifest.json`, `ScrollMode.qml`, `i18n/` | the Omarchy plugin, at the root so `omarchy plugin add` works |
 | `TrackballBall.qml` | the drawn sphere used in the bar and in the panel header |
+| `DpiColor.js` | deterministic DPI hue/lightness shared by every mouse |
 | `daemon/scrollmoded.py` | the daemon |
+| `daemon/dpi.py` | DPI provider registry (ratbag, vendor, manual) and HID monitor |
 | `daemon/omarchy-scrollmode` | the CLI |
 | `config.default.json` | first-run config |
 | `install.sh`, `uninstall.sh` | installer/uninstaller |
@@ -561,6 +622,11 @@ slate.
   mention "keyboard" may still show its pointer interface.
 - Trackballs have no standard HID flag, so device detection is identity-based
   (the device you picked), not classification.
+- DPI is vendor-specific. libratbag supports many gaming mice but not every
+  model; unknown mice without a vendor parser stay counts-only until a manual
+  `dpi set`. Vendor tables currently cover the Wings Tech Gaming Mouse.
+- This release reads DPI only. Writing a new DPI stage from the panel is
+  planned for the next iteration.
 
 ## Roadmap
 

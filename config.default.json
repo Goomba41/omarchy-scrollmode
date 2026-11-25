@@ -31,5 +31,9 @@
     "show_bar": true,
     "low_percent": 20,
     "poll_seconds": 300
+  },
+  "dpi": {
+    "ratbag_device": "",
+    "manual": {}
   }
 }

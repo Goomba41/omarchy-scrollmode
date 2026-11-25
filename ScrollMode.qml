@@ -4,6 +4,7 @@ import Quickshell.Io
 import qs.Ui as Ui
 import qs.Commons
 import qs.Commons as Commons
+import "DpiColor.js" as DpiColor
 
 // Scroll modes: pointer, scroll, sniper. Left click opens the settings panel;
 // the daemon also turns a held side button into a temporary sniper trigger.
@@ -225,6 +226,83 @@ Ui.Panel {
     : " · " + root.batteryPercentText
       + (root.batteryCharging ? " " + strings.t("battery.chargingSuffix") : "")
 
+  // DPI is read from libratbag, a vendor HID report or a manual override.
+  readonly property var dpiToolsInfo: (status && status.dpiTools
+    && typeof status.dpiTools === "object") ? status.dpiTools : ({})
+  readonly property bool dpiRatbag: root.dpiToolsInfo.ratbag === true
+  readonly property bool dpiPiper: root.dpiToolsInfo.piper === true
+  readonly property var dpiStages: (status && status.dpiStages
+    && Array.isArray(status.dpiStages)) ? status.dpiStages : []
+  readonly property int dpiCurrent: (status && status.dpi) ? Number(status.dpi) : 0
+  readonly property string dpiSource: (status && status.dpiSource)
+    ? String(status.dpiSource) : "none"
+  readonly property var dpiRange: (status && status.dpiRange
+    && typeof status.dpiRange === "object") ? status.dpiRange : ({})
+  readonly property bool dpiVisible: root.tab === 2 && root.deviceKind === "mouse"
+  readonly property bool darkTheme: Color.popups.background.hslLightness < 0.5
+  readonly property string dpiToolAction: {
+    if (!root.dpiVisible) return ""
+    if (root.dpiSource === "ratbag")
+      return root.dpiPiper ? "openPiper" : "installPiper"
+    if (root.dpiSource !== "none") return ""
+    if (!root.dpiRatbag) return "installLibratbag"
+    if (root.dpiToolsInfo.daemon !== true) return "startRatbag"
+    return root.dpiPiper ? "openPiper" : "installPiper"
+  }
+
+  function dpiSourceLabel(source) {
+    if (source === "ratbag") return strings.t("dpi.source.ratbag")
+    if (source === "vendor") return strings.t("dpi.source.vendor")
+    if (source === "manual") return strings.t("dpi.source.manual")
+    return strings.t("dpi.source.none")
+  }
+
+  function dpiShort(dpiValue) {
+    var value = Number(dpiValue)
+    if (!(value > 0)) return "?"
+    if (value >= 1000) {
+      var thousands = value / 1000
+      return (thousands >= 10 ? Math.round(thousands)
+        : Math.round(thousands * 10) / 10) + "k"
+    }
+    return String(Math.round(value))
+  }
+
+  function dpiText(dpiValue) {
+    return root.fmtNumber(Number(dpiValue), 0) + " " + strings.t("dpi.unit")
+  }
+
+  function dpiRangeText() {
+    var span = root.dpiRange
+    if (!span || !span.min || !span.max) return ""
+    return root.fmtNumber(Number(span.min), 0) + "–"
+      + root.fmtNumber(Number(span.max), 0) + " " + strings.t("dpi.unit")
+      + " · " + strings.t("dpi.stageCount").arg(root.dpiStages.length)
+  }
+
+  function dpiToolLabel() {
+    if (root.dpiToolAction === "openPiper") return strings.t("dpi.openPiper")
+    if (root.dpiToolAction === "installPiper") return strings.t("dpi.installPiper")
+    if (root.dpiToolAction === "startRatbag") return strings.t("dpi.startLibratbag")
+    return strings.t("dpi.installLibratbag")
+  }
+
+  function runDpiTool() {
+    if (root.dpiToolAction === "openPiper") {
+      Quickshell.execDetached(["piper"])
+    } else if (root.dpiToolAction === "installPiper") {
+      Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-lc",
+        "sudo pacman -S --needed --noconfirm piper && piper"])
+    } else if (root.dpiToolAction === "startRatbag") {
+      Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-lc",
+        "sudo systemctl enable --now ratbagd && omarchy-scrollmode rescan"])
+    } else if (root.dpiToolAction === "installLibratbag") {
+      Quickshell.execDetached(["omarchy-launch-terminal", "bash", "-lc",
+        "sudo pacman -S --needed --noconfirm libratbag piper"
+        + " && sudo systemctl enable --now ratbagd"])
+    }
+  }
+
   function batteryStateText(state) {
     if (state === "charging") return strings.t("battery.state.charging")
     if (state === "nearly-full") return strings.t("battery.state.nearlyFull")
@@ -312,17 +390,19 @@ Ui.Panel {
   readonly property real mouseActiveMs: Number(mouseInfo.active_ms || 0)
   readonly property real mousePeak: Number(mouseInfo.max_speed || 0)
   readonly property real mouseDpi: Number(mouseInfo.dpi || 0)
+  readonly property real mouseDistanceM: Number(mouseInfo.distance_m || 0)
   readonly property var mouseDays: (mouseInfo && mouseInfo.days) ? mouseInfo.days : ({})
   readonly property var mouseToday: mouseDays[root.statTodayKey] || ({})
-  readonly property real mouseKm: root.mouseDpi > 0
-    ? root.mouseCounts / root.mouseDpi * 0.0254 / 1000 : 0
-  readonly property bool mouseHasDistance: root.mouseDpi > 0
+  readonly property real mouseKm: root.mouseDistanceM > 0
+    ? root.mouseDistanceM / 1000
+    : (root.mouseDpi > 0 ? root.mouseCounts / root.mouseDpi * 0.0254 / 1000 : 0)
+  readonly property bool mouseHasDistance: root.mouseDistanceM > 0 || root.mouseDpi > 0
   readonly property int mouseActiveDays: Object.keys(mouseDays).length
   readonly property string mouseBestKey: {
     var best = ""
     var bestValue = -1
     for (var key in mouseDays) {
-      var value = Number((mouseDays[key] || {}).counts || 0)
+      var value = root.mouseDayScore(mouseDays[key] || ({}))
       if (value > bestValue) {
         bestValue = value
         best = key
@@ -330,10 +410,6 @@ Ui.Panel {
     }
     return best
   }
-  readonly property real mouseBestCounts: root.mouseBestKey !== ""
-    ? Number((mouseDays[root.mouseBestKey] || {}).counts || 0) : 0
-  readonly property real mouseBestKm: root.mouseBestKey !== ""
-    ? root.mouseDayKm(mouseDays[root.mouseBestKey] || ({})) : 0
   readonly property string mouseBestLabel: root.mouseBestKey === "" ? "—"
     : Qt.formatDate(new Date(root.mouseBestKey + "T12:00:00"), "d MMM yyyy")
   readonly property string mouseDirection: {
@@ -353,14 +429,29 @@ Ui.Panel {
     ? root.fmtDistance(root.mouseKm)
     : root.fmtNumber(root.mouseCounts, 0) + " " + strings.t("stats.countsUnit")
 
-  function mouseDayKm(day) {
+  function mouseDayMeters(day) {
+    var entry = day || {}
+    var stored = Number(entry.distance_m || 0)
+    if (stored > 0) return stored
     if (root.mouseDpi <= 0) return 0
-    return Number(day.counts || 0) / root.mouseDpi * 0.0254 / 1000
+    return Number(entry.counts || 0) / root.mouseDpi * 0.0254
+  }
+
+  function mouseDayScore(day) {
+    var entry = day || {}
+    var stored = Number(entry.distance_m || 0)
+    if (stored > 0) return stored
+    if (root.mouseDpi > 0) return root.mouseDayMeters(entry)
+    return Number(entry.counts || 0)
+  }
+
+  function mouseDayKm(day) {
+    return root.mouseDayMeters(day) / 1000
   }
 
   function mouseDayText(day) {
     if (root.mouseHasDistance) return root.fmtDistance(root.mouseDayKm(day))
-    return root.fmtNumber(Number(day.counts || 0), 0) + " "
+    return root.fmtNumber(Number((day || {}).counts || 0), 0) + " "
       + strings.t("stats.countsUnit")
   }
 
@@ -541,6 +632,7 @@ Ui.Panel {
       rows.push("autoExitHelp")
     } else if (root.tab === 2) {
       rows = ["device", "useDevice", "rescan"]
+      if (root.dpiToolAction !== "") rows.push("dpiTool")
       if (root.batteryAvailable) {
         rows.push("batteryShowBar")
         rows.push("batteryShowBarHelp")
@@ -650,6 +742,7 @@ Ui.Panel {
     if (id === "device") return devicePicker
     if (id === "useDevice") return useButton
     if (id === "rescan") return refreshButton
+    if (id === "dpiTool") return dpiToolButton
     if (id === "batteryShowBar") return batteryShowToggle
     if (id === "batteryShowBarHelp") return batteryShowToggle.helpIcon
     if (id === "batteryLow") return batteryLowSlider
@@ -736,6 +829,7 @@ Ui.Panel {
     else if (id === "device") devicePicker.open()
     else if (id === "useDevice") root.applyPendingDevice()
     else if (id === "rescan") root.rescan()
+    else if (id === "dpiTool") root.runDpiTool()
     else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
     else if (id === "batteryLow") batteryLowSlider.flash = true
     else if (id === "batteryPoll") root.cycleNumber("battery.poll_seconds", [60, 300, 900, 1800], 1)
@@ -1358,6 +1452,182 @@ Ui.Panel {
                 }
               }
             }
+          }
+
+          Column {
+            id: dpiSection
+            visible: root.dpiVisible
+            width: parent.width
+            spacing: Style.space(6)
+
+            Item { width: 1; height: Style.space(8) }
+
+            StatHeader { text: strings.t("menu.dpi") }
+
+            Flow {
+              visible: root.dpiStages.length > 0
+              width: parent.width
+              spacing: Style.space(6)
+
+              Repeater {
+                model: root.dpiStages
+
+                delegate: Rectangle {
+                  id: dpiChip
+                  required property var modelData
+
+                  readonly property int chipDpi: Number(modelData.dpi || 0)
+                  readonly property bool active: modelData.active === true
+                  readonly property color tone: DpiColor.colorFor(
+                    chipDpi, 1, root.darkTheme)
+
+                  width: dpiChipRow.implicitWidth + Style.space(18)
+                  height: Style.spacing.controlHeight - Style.space(8)
+                  radius: Style.space(4)
+                  color: Qt.rgba(tone.r, tone.g, tone.b, active ? 0.30 : 0.09)
+                  border.width: 1
+                  border.color: Qt.rgba(tone.r, tone.g, tone.b, active ? 0.95 : 0.42)
+
+                  Row {
+                    id: dpiChipRow
+                    anchors.centerIn: parent
+                    spacing: Style.space(6)
+
+                    Rectangle {
+                      width: Style.space(6)
+                      height: width
+                      radius: width / 2
+                      anchors.verticalCenter: parent.verticalCenter
+                      color: dpiChip.tone
+                      opacity: dpiChip.active ? 1 : 0.7
+                    }
+
+                    Text {
+                      text: root.dpiShort(dpiChip.chipDpi)
+                      textFormat: Text.PlainText
+                      color: Color.popups.text
+                      opacity: dpiChip.active ? 1 : 0.82
+                      font.family: Style.font.family
+                      font.pixelSize: Style.font.body
+                      font.bold: dpiChip.active
+                    }
+                  }
+
+                  MouseArea {
+                    id: dpiChipMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton
+                    onClicked: {}
+                  }
+
+                  Ui.PanelToolTip {
+                    visible: dpiChipMouse.containsMouse
+                    text: root.dpiText(dpiChip.chipDpi)
+                      + (dpiChip.active ? " · " + strings.t("dpi.currentLower") : "")
+                    width: Style.space(180)
+                    delay: 250
+                  }
+                }
+              }
+            }
+
+            Item {
+              width: parent.width
+              height: Math.max(dpiCurrentText.implicitHeight, dpiSourceText.implicitHeight)
+
+              Text {
+                id: dpiCurrentText
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, parent.width * 0.62)
+                text: root.dpiCurrent > 0
+                  ? strings.t("dpi.current") + " · " + root.dpiText(root.dpiCurrent)
+                  : (root.dpiStages.length > 0 ? strings.t("dpi.unknown")
+                    : strings.t("dpi.notExposed"))
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                font.family: Style.font.family
+                font.pixelSize: Style.font.body
+                elide: Text.ElideRight
+              }
+
+              Text {
+                id: dpiSourceText
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(0, parent.width * 0.34)
+                text: root.dpiSourceLabel(root.dpiSource)
+                textFormat: Text.PlainText
+                color: Color.popups.text
+                opacity: 0.55
+                font.family: Style.font.family
+                font.pixelSize: Style.font.caption
+                horizontalAlignment: Text.AlignRight
+                elide: Text.ElideRight
+              }
+            }
+
+            Text {
+              visible: root.dpiStages.length > 1
+              width: parent.width
+              text: root.dpiRangeText()
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.5
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+
+            Text {
+              visible: root.dpiSource === "vendor" && root.dpiCurrent <= 0
+              width: parent.width
+              text: strings.t("dpi.vendorHint")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.5
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              visible: root.dpiStages.length > 0
+              width: parent.width
+              text: strings.t("dpi.sameColors")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.4
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            Text {
+              visible: root.dpiSource === "none"
+              width: parent.width
+              text: root.dpiRatbag
+                ? strings.t("dpi.ratbagNoDevice") : strings.t("dpi.ratbagMissing")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.5
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
+            }
+
+            ActionButton {
+              id: dpiToolButton
+              visible: root.dpiToolAction !== ""
+              width: parent.width
+              height: Style.spacing.controlHeight
+              idleText: root.dpiToolLabel()
+              onHovered: function(isHovered) { if (isHovered) root.setCursor("dpiTool") }
+              onActivated: root.runDpiTool()
+            }
+
+            Item { width: 1; height: Style.space(8) }
           }
 
           Flickable {
@@ -2123,7 +2393,7 @@ Ui.Panel {
           }
 
           Text {
-            visible: root.tab === 2 && !root.supportsButtons
+            visible: root.tab === 2 && !root.supportsButtons && !root.dpiVisible
             width: parent.width
             text: strings.t("device.limited")
             textFormat: Text.PlainText

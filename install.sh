@@ -31,6 +31,7 @@ root_stage() {
 
   say "installing the daemon and the CLI"
   install -Dm755 "$src/daemon/scrollmoded.py" "$LIB_DIR/scrollmoded.py"
+  install -Dm644 "$src/daemon/dpi.py" "$LIB_DIR/dpi.py"
   install -Dm755 "$src/daemon/omarchy-scrollmode" "$BIN"
 
   say "installing the systemd unit"
@@ -110,11 +111,13 @@ else
   install -m644 "$PLUGIN_SRC/TrackballBall.qml" "$PLUGIN_DST/TrackballBall.qml"
   install -m644 "$PLUGIN_SRC/CursorGlyph.qml" "$PLUGIN_DST/CursorGlyph.qml"
   install -m644 "$PLUGIN_SRC/DeviceIcon.qml" "$PLUGIN_DST/DeviceIcon.qml"
+  install -m644 "$PLUGIN_SRC/DpiColor.js" "$PLUGIN_DST/DpiColor.js"
   install -m644 "$PLUGIN_SRC"/i18n/*.json "$PLUGIN_DST/i18n/"
   install -m755 "$PLUGIN_SRC/install.sh" "$PLUGIN_DST/install.sh"
   install -m755 "$PLUGIN_SRC/uninstall.sh" "$PLUGIN_DST/uninstall.sh"
   install -m755 "$PLUGIN_SRC/daemon/omarchy-scrollmode" "$PLUGIN_DST/daemon/omarchy-scrollmode"
   install -m644 "$PLUGIN_SRC/daemon/scrollmoded.py" "$PLUGIN_DST/daemon/scrollmoded.py"
+  install -m644 "$PLUGIN_SRC/daemon/dpi.py" "$PLUGIN_DST/daemon/dpi.py"
   install -m644 "$PLUGIN_SRC/config.default.json" "$PLUGIN_DST/config.default.json"
 fi
 

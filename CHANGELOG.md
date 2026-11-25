@@ -4,6 +4,42 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.0] — 2026-11-25
+
+### Added
+
+- A **DPI** section in the Device tab for mice. It lists every exposed stage
+  as a chip, highlights the current stage, names the provider and shows the
+  range. Trackballs keep their ball-distance stats and never show the section.
+- A DPI provider registry tried in order: **libratbag/ratbagd** through
+  `ratbagctl`, a **vendor HID report** (Wings), a **manual** value, then
+  **none**. libratbag and piper stay optional; the panel offers to install or
+  open them when the mouse does not expose DPI on its own.
+- Wings Tech Gaming Mouse support for the `04 a2 02 <stage> 00 <code> <code>`
+  report, with the seven known stages (900–21,000 DPI) and the current stage
+  cached in `dpi.json` after the first DPI-button press.
+- Deterministic DPI colours from `DpiColor.js`: hue depends only on the DPI
+  value (`800` is the same blue on every mouse), with slight lightness changes
+  to separate nearby stages.
+- `omarchy-scrollmode dpi`, `dpi set <value>` and `dpi clear` for the read view
+  and the manual fallback.
+- Mouse statistics now store `distance_m` at event time, so changing DPI later
+  never rewrites earlier distance. Old counts are migrated once when the first
+  DPI becomes known, and the Stats tab still falls back to counts.
+
+### Changed
+
+- Mouse Device tab no longer says that more mouse settings are coming; the DPI
+  section occupies that space.
+- `install.sh` installs `daemon/dpi.py` and `DpiColor.js`.
+
+### Notes
+
+- DPI is read-only in this release. Writing a stage from the panel is planned
+  for 1.11.0.
+- `ratbagd` is optional and not started automatically; when it is absent the
+  vendor or manual path is used.
+
 ## [1.9.7] — 2026-11-25
 
 ### Changed

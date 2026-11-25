@@ -9,6 +9,7 @@ test:
   script:
     - python3 daemon/scrollmoded.py --selftest
     - python3 tests/test_frame.py
+    - python3 tests/test_dpi.py
     - bash -n install.sh
     - bash -n uninstall.sh
     - jq -e '.schemaVersion == 1' manifest.json

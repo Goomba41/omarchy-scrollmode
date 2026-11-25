@@ -322,6 +322,29 @@ def main():
     assert mouse["counts"] == 10.0, mouse
     assert mouse["wheel"] == 1.0 and mouse["clicks"] == 1, mouse
 
+    # Distance is stored in metres when the DPI is known, and a later DPI
+    # change never rewrites the distance already recorded.
+    daemon.stats["mouse"] = scrollmoded.default_mouse_stats()
+    daemon.dpi_info = {"dpi": 800}
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_X, 800)])
+    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
+    daemon.dpi_info = {"dpi": 1600}
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_X, 1600)])
+    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0508) < 1e-9, daemon.stats["mouse"]
+    day = next(iter(daemon.stats["mouse"]["days"].values()))
+    assert abs(day["distance_m"] - 0.0508) < 1e-9, day
+    print("mouse distance:", daemon.stats["mouse"]["distance_m"], "m")
+
+    # Old counts migrate once, as soon as a DPI becomes known.
+    daemon.stats["mouse"] = scrollmoded.default_mouse_stats()
+    daemon.stats["mouse"]["counts"] = 800.0
+    daemon.dpi_info = {"dpi": 800}
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
+    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
+    assert daemon.stats["mouse"]["distance_migrated"] is True, daemon.stats["mouse"]
+    daemon.record_raw_stats([event(ecodes.EV_REL, ecodes.REL_WHEEL, 1)])
+    assert abs(daemon.stats["mouse"]["distance_m"] - 0.0254) < 1e-9, daemon.stats["mouse"]
+
     # Older statistics only stored notches per day; loading migrates them.
     legacy_path = os.path.join(directory, "legacy.json")
     with open(legacy_path, "w") as handle:

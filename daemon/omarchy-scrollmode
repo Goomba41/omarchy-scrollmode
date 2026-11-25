@@ -7,6 +7,9 @@ Usage:
   omarchy-scrollmode on|off      force scroll or pointer mode
   omarchy-scrollmode status      print the current mode
   omarchy-scrollmode battery     print the mouse battery
+  omarchy-scrollmode dpi         print the DPI view and provider
+  omarchy-scrollmode dpi set <n> set a manual DPI for the active mouse
+  omarchy-scrollmode dpi clear   remove the manual DPI override
   omarchy-scrollmode reload      reload ~/.config/omarchy/scrollmode.json
   omarchy-scrollmode devices     list pointing devices
   omarchy-scrollmode use <id>    make a device the active one
@@ -81,6 +84,10 @@ DEFAULT_CONFIG = {
         "low_percent": 20,
         "poll_seconds": 300,
     },
+    "dpi": {
+        "ratbag_device": "",
+        "manual": {},
+    },
 }
 
 # path -> (kind, min, max)
@@ -107,6 +114,7 @@ SETTINGS = {
     "battery.show_bar": ("bool",),
     "battery.low_percent": ("number", 5, 50),
     "battery.poll_seconds": ("number", 30, 3600),
+    "dpi.ratbag_device": ("string",),
 }
 
 BLOCK_START = "-- >>> omarchy-scrollmode >>>"
@@ -407,6 +415,79 @@ def show_battery() -> int:
     return 0
 
 
+def show_dpi() -> int:
+    status = read_status()
+    source = str(status.get("dpiSource") or "none")
+    stages = status.get("dpiStages") if isinstance(status.get("dpiStages"), list) else []
+    current = int(status.get("dpi") or 0)
+    device = str(status.get("dpiDevice") or "")
+    if source == "none" or not stages:
+        print("DPI: not exposed")
+    else:
+        suffix = f" · {device}" if device else ""
+        print(f"DPI: {current} ({source}{suffix})" if current > 0 else f"DPI: unknown ({source}{suffix})")
+        parts = []
+        for stage in stages:
+            try:
+                value = int(stage.get("dpi") or 0)
+            except (AttributeError, TypeError, ValueError):
+                continue
+            parts.append(f"[{value}]" if stage.get("active") else str(value))
+        print("stages: " + ", ".join(parts))
+        span = status.get("dpiRange") if isinstance(status.get("dpiRange"), dict) else {}
+        if span.get("min") and span.get("max"):
+            step = int(span.get("step") or 0)
+            extra = f", step {step}" if step else ""
+            print(f"range: {span['min']}–{span['max']}{extra}")
+    tools = status.get("dpiTools") if isinstance(status.get("dpiTools"), dict) else {}
+    print(
+        "libratbag: " + ("installed" if tools.get("ratbag") else "not installed")
+        + " · piper: " + ("installed" if tools.get("piper") else "not installed")
+    )
+    if status.get("kind") != "mouse":
+        print("note: DPI is only shown for mice")
+    return 0
+
+
+def set_manual_dpi(raw: str, clear: bool = False) -> int:
+    status = read_status()
+    device_id = str(status.get("activeId") or "")
+    if not device_id:
+        print(f"{APP}: no active device", file=sys.stderr)
+        return 1
+    if status.get("kind") != "mouse":
+        print(f"{APP}: manual DPI is only used for mice", file=sys.stderr)
+        return 1
+    config = read_config()
+    section = config.get("dpi")
+    if not isinstance(section, dict):
+        section = {}
+        config["dpi"] = section
+    manual = section.get("manual")
+    if not isinstance(manual, dict):
+        manual = {}
+        section["manual"] = manual
+    if clear:
+        manual.pop(device_id, None)
+        write_config(config)
+        reload_daemon()
+        print("manual DPI cleared")
+        return 0
+    try:
+        value = int(float(raw))
+    except (TypeError, ValueError):
+        print(f"{APP}: usage: {APP} dpi set <50..64000>", file=sys.stderr)
+        return 2
+    if not 50 <= value <= 64000:
+        print(f"{APP}: DPI must be between 50 and 64000", file=sys.stderr)
+        return 2
+    manual[device_id] = value
+    write_config(config)
+    reload_daemon()
+    print(f"manual DPI for {device_id}: {value}")
+    return 0
+
+
 def learn_button(args: list[str]) -> int:
     if args and args[0].lower() == "cancel":
         print(send("learn cancel"))
@@ -488,6 +569,17 @@ def main(argv: list[str]) -> int:
 
     if command == "battery":
         return show_battery()
+
+    if command == "dpi":
+        action = argv[1].lower() if len(argv) > 1 else "show"
+        if action == "set":
+            if len(argv) < 3:
+                print(f"{APP}: usage: {APP} dpi set <50..64000>", file=sys.stderr)
+                return 2
+            return set_manual_dpi(argv[2])
+        if action == "clear":
+            return set_manual_dpi("", clear=True)
+        return show_dpi()
 
     if command == "learn":
         return learn_button(argv[1:])
