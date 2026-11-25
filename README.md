@@ -20,10 +20,15 @@ settings on a left click.
 - **No latency in pointer mode**: the device is not grabbed at all until scroll
   mode is on. If the daemon dies, the kernel drops the grab.
 - **Any pointing device**: the panel lists every relative pointer it finds,
-  labels it with a type code (`[TB]` trackball, `[MS]` mouse, `[TP]` trackpad,
-  `[TA]` tablet, `[UN]` unknown) and a short transport tag (`USB`, `2.4G`,
-  `BT`) where the kernel exposes it, and you pick the one to grab. Selection
-  survives reboots.
+  ends its label with a short transport tag (`USB`, `2.4G`, `BT`) where the
+  kernel exposes it and the device type (`MS`, `TB`, `TP`, `TA`, `UN`), and
+  you pick the one to grab. Selection survives reboots.
+- **Keyboard-first**: `j`/`k` move, `h`/`l` adjust, `Enter` selects, `1`–`4`
+  switch tabs, `r` rescans and `Esc` closes. Mouse hover feeds the same cursor,
+  so only one control is highlighted at a time.
+- **Fixed footer**: the bottom of every panel shows the active connection on
+  its first line and the key hints on the second. It stays put while the
+  settings scroll.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
 - **Drawn device icons**: the trackball is a shaded sphere with a specular
@@ -185,7 +190,18 @@ icon.
 
 The settings are grouped into **Scroll**, **Feel**, **Device** and **Stats**
 tabs; the device picker stays above them. A circled question mark next to a setting opens
-a short tooltip explaining what it changes. Every control writes
+a short tooltip explaining what it changes.
+
+### Keyboard
+
+`j`/`k` (or the arrow keys) move the cursor between controls, `h`/`l`
+(or the left/right arrows) adjust the current control, `Enter` selects, `1`–`4`
+switch tabs, `r` rescans and `Esc` closes. Sliders and toggles change on
+`h`/`l`; the device picker cycles through devices. The cursor follows mouse
+hover too, and the fixed footer always shows the active connection plus these
+hints, even while the settings scroll.
+
+Every control writes
 `~/.config/omarchy/scrollmode.json` through `omarchy-scrollmode set` and the
 daemon reloads immediately. Sliders snap to
 their step (5 % for speeds, 50 ms for the hold threshold).
@@ -276,9 +292,11 @@ The **Device** dropdown lists every pointing device (a device with
 is stored as `device.selected` and the daemon re-grabs it.
 
 - Names come from udev (`ID_VENDOR` + `ID_MODEL`), from HID++ for a Logitech
-  receiver, and fall back to the kernel name. Devices that are obviously
-  keyboards (`keyboard`, `keypad`, `kbd` in the name/model) are skipped and
-  counted in the "hidden" note next to the **Device** label.
+  receiver, and fall back to the kernel name. Each label ends with the
+  transport and type after dots, for example
+  `Wings Tech Gaming Mouse · USB · MS`. Devices that are obviously keyboards
+  (`keyboard`, `keypad`, `kbd` in the name/model) are skipped and counted in
+  the "hidden" note next to the **Device** label.
 - While `device.selected` is empty the daemon guesses: `device.match` (default
   `logitech`), then the first device that looks like a trackball, then the
   first pointer. This is only the initial guess.

@@ -469,7 +469,7 @@ Ui.Panel {
       var conn = list[i].connection ? root.connectionShort(String(list[i].connection)) : ""
       options.push({
         value: list[i].id,
-        label: "[" + code + "] " + list[i].name + (conn !== "" ? " · " + conn : "")
+        label: list[i].name + (conn !== "" ? " · " + conn : "") + " · " + code
       })
     }
     return options
@@ -479,6 +479,8 @@ Ui.Panel {
   readonly property bool pendingMismatch: root.devices.length > 0
     && root.pendingId !== "" && root.pendingId !== root.activeId
   readonly property bool noDevices: root.devices.length === 0
+  readonly property bool settingsVisible: root.serviceState === "active"
+    && !root.noDevices && !root.pendingMismatch
 
   readonly property color doneColor: "#a7c080"
   readonly property color armedColor: "#dbbc7f"
@@ -501,6 +503,16 @@ Ui.Panel {
       if (options[i].index === root.tab) return
     root.tab = options.length ? options[0].index : 2
   }
+  function selectTab(position) {
+    var slot = Number(position) - 1
+    var options = root.tabOptions
+    if (slot < 0 || slot >= options.length) return
+    root.tab = options[slot].index
+    root.cursorIndex = 0
+    root.cursorActive = false
+    Qt.callLater(function() { root.cursorActive = true })
+    Qt.callLater(root.ensureCursorVisible)
+  }
   onDeviceKindChanged: {
     if (root.deviceKind === "mouse" && (root.tab === 0 || root.tab === 1))
       root.tab = 2
@@ -508,6 +520,219 @@ Ui.Panel {
   }
   onSupportsScrollChanged: Qt.callLater(root.ensureTab)
   onTabOptionsChanged: Qt.callLater(root.ensureTab)
+
+  // Keyboard cursor. The row order follows the active tab and only includes
+  // controls that are actually visible. Mouse hover feeds the same index.
+  property bool cursorActive: false
+  property int cursorIndex: 0
+  readonly property var rowOrder: {
+    if (!root.settingsVisible) return []
+    var rows = []
+    if (root.tab === 0) {
+      rows = ["speed", "sniper", "invertV", "invertH", "axisLock", "hiRes", "exitOnClick"]
+    } else if (root.tab === 1) {
+      rows = ["inertia"]
+      if (root.bool("scroll.inertia")) {
+        rows.push("inertiaTrigger")
+        rows.push("inertiaCoast")
+      }
+      rows.push("holdThreshold")
+      rows.push("autoExit")
+    } else if (root.tab === 2) {
+      rows = ["device", "useDevice", "rescan"]
+      if (root.batteryAvailable) {
+        rows.push("batteryShowBar")
+        rows.push("batteryLow")
+        rows.push("batteryPoll")
+      }
+      if (root.supportsButtons) {
+        if (root.sniperAvailable) {
+          if (root.sniperCode > 0) rows.push("sniperClear")
+          rows.push("sniperChoose")
+        }
+        rows.push("openConfig")
+        rows.push("reset")
+      }
+    }
+    return rows
+  }
+  readonly property string cursorId: root.cursorActive && root.cursorIndex >= 0
+    && root.cursorIndex < root.rowOrder.length ? root.rowOrder[root.cursorIndex] : ""
+  onRowOrderChanged: {
+    if (root.cursorIndex >= root.rowOrder.length)
+      root.cursorIndex = Math.max(0, root.rowOrder.length - 1)
+    Qt.callLater(root.ensureCursorVisible)
+  }
+  onTabChanged: {
+    root.cursorIndex = 0
+    root.cursorActive = false
+    Qt.callLater(root.ensureCursorVisible)
+  }
+  onOpenedChanged: {
+    if (root.opened) {
+      root.cursorIndex = 0
+      root.cursorActive = false
+      Qt.callLater(root.ensureCursorVisible)
+    }
+  }
+  function ensureCursorVisible() {
+    var target = root.cursorTarget(root.cursorId)
+    if (!target || !target.visible) return
+    var y = target.mapToItem(bodyContent, 0, 0).y
+    var top = bodyFlick.contentY
+    var bottom = top + bodyFlick.height
+    var margin = Style.space(8)
+    if (y < top + margin) {
+      bodyFlick.contentY = Math.max(0, y - margin)
+    } else if (y + target.height > bottom - margin) {
+      var limit = Math.max(0, bodyFlick.contentHeight - bodyFlick.height)
+      bodyFlick.contentY = Math.min(limit,
+        y + target.height - bodyFlick.height + margin)
+    }
+  }
+  function setCursor(id) {
+    var i = root.rowOrder.indexOf(id)
+    if (i < 0) return
+    root.cursorIndex = i
+    root.cursorActive = true
+    Qt.callLater(root.ensureCursorVisible)
+  }
+  function rowHasCursor(id) {
+    return root.cursorActive && root.cursorId === id
+  }
+  function moveCursor(delta) {
+    if (root.rowOrder.length === 0) {
+      var limit = Math.max(0, bodyFlick.contentHeight - bodyFlick.height)
+      bodyFlick.contentY = Math.max(0, Math.min(limit,
+        bodyFlick.contentY + delta * Style.space(64)))
+      return
+    }
+    if (!root.cursorActive) {
+      root.cursorActive = true
+      Qt.callLater(root.ensureCursorVisible)
+      return
+    }
+    root.cursorIndex = Math.max(0, Math.min(root.rowOrder.length - 1,
+      root.cursorIndex + delta))
+    Qt.callLater(root.ensureCursorVisible)
+  }
+  function cursorTarget(id) {
+    if (id === "speed") return speedSlider
+    if (id === "sniper") return sniperSlider
+    if (id === "invertV") return invertVToggle
+    if (id === "invertH") return invertHToggle
+    if (id === "axisLock") return axisLockToggle
+    if (id === "hiRes") return hiResToggle
+    if (id === "exitOnClick") return exitOnClickToggle
+    if (id === "inertia") return inertiaToggle
+    if (id === "inertiaTrigger") return inertiaTriggerSlider
+    if (id === "inertiaCoast") return inertiaCoastSlider
+    if (id === "holdThreshold") return holdSlider
+    if (id === "autoExit") return autoExitRow
+    if (id === "device") return devicePicker
+    if (id === "useDevice") return useButton
+    if (id === "rescan") return refreshButton
+    if (id === "batteryShowBar") return batteryShowToggle
+    if (id === "batteryLow") return batteryLowSlider
+    if (id === "batteryPoll") return batteryPollRow
+    if (id === "sniperClear") return sniperClearToggle
+    if (id === "sniperChoose") return sniperChooseButton
+    if (id === "openConfig") return openConfigButton
+    if (id === "reset") return resetButton
+    return null
+  }
+  function nudgeSlider(row, delta) {
+    if (!row) return
+    var next = row.snap(row.sliderValue + delta * row.step)
+    row.commit(row.fromSlider ? row.fromSlider(next) : next)
+    row.flash = true
+  }
+  function cycleNumber(path, values, delta) {
+    var current = Number(root.value(path, values[0]))
+    var index = values.indexOf(current)
+    if (index < 0) index = 0
+    index = (index + delta + values.length) % values.length
+    root.setValue(path, values[index])
+  }
+  function cyclePending(delta) {
+    var options = root.deviceOptions
+    if (options.length === 0) return
+    var index = 0
+    for (var i = 0; i < options.length; i++)
+      if (options[i].value === root.pendingId) { index = i; break }
+    index = (index + delta + options.length) % options.length
+    root.pendingId = options[index].value
+  }
+  function applyPendingDevice() {
+    if (root.pendingId !== root.activeId) root.useDevice(root.pendingId)
+  }
+  function adjustCursor(delta) {
+    if (!root.cursorActive) {
+      root.cursorActive = true
+      Qt.callLater(root.ensureCursorVisible)
+      return
+    }
+    var id = root.cursorId
+    if (id === "speed") root.nudgeSlider(speedSlider, delta)
+    else if (id === "sniper") root.nudgeSlider(sniperSlider, delta)
+    else if (id === "invertV") root.setValue("scroll.invert_vertical", !root.bool("scroll.invert_vertical"))
+    else if (id === "invertH") root.setValue("scroll.invert_horizontal", !root.bool("scroll.invert_horizontal"))
+    else if (id === "axisLock") root.setValue("scroll.axis_lock", !root.bool("scroll.axis_lock"))
+    else if (id === "hiRes") root.setValue("scroll.hi_res", !root.bool("scroll.hi_res"))
+    else if (id === "exitOnClick") root.setValue("exit_on_click", !root.bool("exit_on_click"))
+    else if (id === "inertia") root.setValue("scroll.inertia", !root.bool("scroll.inertia"))
+    else if (id === "inertiaTrigger") root.nudgeSlider(inertiaTriggerSlider, delta)
+    else if (id === "inertiaCoast") root.nudgeSlider(inertiaCoastSlider, delta)
+    else if (id === "holdThreshold") root.nudgeSlider(holdSlider, delta)
+    else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], delta)
+    else if (id === "device") root.cyclePending(delta)
+    else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
+    else if (id === "batteryLow") root.nudgeSlider(batteryLowSlider, delta)
+    else if (id === "batteryPoll") root.cycleNumber("battery.poll_seconds", [60, 300, 900, 1800], delta)
+    else if (id === "sniperClear") root.setValue("sniper_button", 0)
+  }
+  function activateCursor() {
+    if (!root.cursorActive) {
+      root.cursorActive = true
+      Qt.callLater(root.ensureCursorVisible)
+      return
+    }
+    var id = root.cursorId
+    if (id === "speed") speedSlider.flash = true
+    else if (id === "sniper") sniperSlider.flash = true
+    else if (id === "invertV") root.setValue("scroll.invert_vertical", !root.bool("scroll.invert_vertical"))
+    else if (id === "invertH") root.setValue("scroll.invert_horizontal", !root.bool("scroll.invert_horizontal"))
+    else if (id === "axisLock") root.setValue("scroll.axis_lock", !root.bool("scroll.axis_lock"))
+    else if (id === "hiRes") root.setValue("scroll.hi_res", !root.bool("scroll.hi_res"))
+    else if (id === "exitOnClick") root.setValue("exit_on_click", !root.bool("exit_on_click"))
+    else if (id === "inertia") root.setValue("scroll.inertia", !root.bool("scroll.inertia"))
+    else if (id === "inertiaTrigger") inertiaTriggerSlider.flash = true
+    else if (id === "inertiaCoast") inertiaCoastSlider.flash = true
+    else if (id === "holdThreshold") holdSlider.flash = true
+    else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], 1)
+    else if (id === "device") devicePicker.open()
+    else if (id === "useDevice") root.applyPendingDevice()
+    else if (id === "rescan") root.rescan()
+    else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
+    else if (id === "batteryLow") batteryLowSlider.flash = true
+    else if (id === "batteryPoll") root.cycleNumber("battery.poll_seconds", [60, 300, 900, 1800], 1)
+    else if (id === "sniperClear") root.setValue("sniper_button", 0)
+    else if (id === "sniperChoose") Quickshell.execDetached([root.cli, "learn"])
+    else if (id === "openConfig") Quickshell.execDetached(["omarchy-launch-editor", root.cfgPath])
+    else if (id === "reset") root.triggerReset()
+  }
+  function triggerReset() {
+    if (resetButton.done) return
+    if (resetButton.armed) {
+      resetButton.armed = false
+      Quickshell.execDetached([root.cli, "reset"])
+      resetButton.done = true
+      resetDoneTimer.restart()
+    } else {
+      resetButton.armed = true
+      resetArmedTimer.restart()
+    }
+  }
   property bool sniperDone: false
   property int lastSniperCode: 0
 
@@ -721,8 +946,40 @@ Ui.Panel {
     Ui.PanelKeyCatcher {
       id: keys
       anchors.fill: parent
-      implicitHeight: menu.implicitHeight
+      implicitHeight: Math.min(menu.implicitHeight + footerArea.height + Style.space(8),
+        Style.space(900))
+      blocked: devicePicker.popupOpen
+      onMoveRequested: function(dx, dy) {
+        if (dx !== 0) root.adjustCursor(dx)
+        else if (dy !== 0) root.moveCursor(dy)
+      }
+      onActivateRequested: root.activateCursor()
       onCloseRequested: root.close()
+      onTextKey: function(t, modifiers) {
+        if (t === "r" || t === "R") root.rescan()
+        else if (t >= "1" && t <= "4") root.selectTab(Number(t))
+      }
+
+      Column {
+        id: panelShell
+        anchors.fill: parent
+        spacing: 0
+
+        Flickable {
+          id: bodyFlick
+          width: parent.width
+          height: Math.max(0, panelShell.height - footerArea.height)
+          contentWidth: width
+          contentHeight: bodyContent.height
+          clip: true
+          boundsBehavior: Flickable.StopAtBounds
+          flickableDirection: Flickable.VerticalFlick
+          interactive: contentHeight > height
+
+          Item {
+            id: bodyContent
+            width: bodyFlick.width
+            height: menu.implicitHeight
 
       Column {
         id: menu
@@ -938,12 +1195,14 @@ Ui.Panel {
           }
 
           Ui.Dropdown {
+            id: devicePicker
             width: parent.width
             height: Style.spacing.controlHeight
             options: root.deviceOptions
             value: root.pendingId
             showLabel: false
             onChanged: function(value) { root.pendingId = value }
+            onHovered: function(isHovered) { if (isHovered) root.setCursor("device") }
           }
 
           Row {
@@ -955,6 +1214,7 @@ Ui.Panel {
               width: parent.width - refreshButton.width - parent.spacing
               height: Style.spacing.controlHeight
               idleText: strings.t("menu.useDevice")
+              onHovered: function(isHovered) { if (isHovered) root.setCursor("useDevice") }
               onActivated: {
                 if (root.pendingId !== root.activeId) root.useDevice(root.pendingId)
               }
@@ -967,6 +1227,7 @@ Ui.Panel {
               iconOnly: true
               idleIcon: "\uf021"
               tooltipText: strings.t("menu.refresh")
+              onHovered: function(isHovered) { if (isHovered) root.setCursor("rescan") }
               onActivated: root.rescan()
             }
           }
@@ -1042,7 +1303,7 @@ Ui.Panel {
         // -- settings ----------------------------------------------------
         Column {
           id: settings
-          visible: root.serviceState === "active" && !root.noDevices && !root.pendingMismatch
+          visible: root.settingsVisible
           width: parent.width
           spacing: Style.space(10)
 
@@ -1532,6 +1793,8 @@ Ui.Panel {
           }
 
           SliderRow {
+            id: speedSlider
+            rowId: "speed"
             visible: root.scrollTabVisible
             label: strings.t("menu.speed")
             help: strings.t("help.speed")
@@ -1553,6 +1816,8 @@ Ui.Panel {
           }
 
           SliderRow {
+            id: sniperSlider
+            rowId: "sniper"
             visible: root.scrollTabVisible
             label: strings.t("menu.sniper")
             help: strings.t("help.sniperSpeed")
@@ -1574,6 +1839,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: invertVToggle
+            rowId: "invertV"
             visible: root.scrollTabVisible
             label: strings.t("menu.invertVertical")
             checked: root.bool("scroll.invert_vertical")
@@ -1581,6 +1848,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: invertHToggle
+            rowId: "invertH"
             visible: root.scrollTabVisible
             label: strings.t("menu.invertHorizontal")
             checked: root.bool("scroll.invert_horizontal")
@@ -1588,6 +1857,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: axisLockToggle
+            rowId: "axisLock"
             visible: root.scrollTabVisible
             label: strings.t("menu.axisLock")
             help: strings.t("help.axisLock")
@@ -1596,6 +1867,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: hiResToggle
+            rowId: "hiRes"
             visible: root.scrollTabVisible
             label: strings.t("menu.hiRes")
             help: strings.t("help.smooth")
@@ -1604,6 +1877,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: exitOnClickToggle
+            rowId: "exitOnClick"
             visible: root.scrollTabVisible
             label: strings.t("menu.exitOnClick")
             help: strings.t("help.exitOnClick")
@@ -1612,6 +1887,8 @@ Ui.Panel {
           }
 
           ToggleRow {
+            id: inertiaToggle
+            rowId: "inertia"
             visible: root.feelTabVisible
             label: strings.t("menu.inertia")
             help: strings.t("help.inertia")
@@ -1620,6 +1897,8 @@ Ui.Panel {
           }
 
           SliderRow {
+            id: inertiaTriggerSlider
+            rowId: "inertiaTrigger"
             visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaTrigger")
             help: strings.t("help.inertiaTrigger")
@@ -1634,6 +1913,8 @@ Ui.Panel {
           }
 
           SliderRow {
+            id: inertiaCoastSlider
+            rowId: "inertiaCoast"
             visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaCoast")
             help: strings.t("help.inertiaCoast")
@@ -1713,6 +1994,8 @@ Ui.Panel {
             }
 
             ToggleRow {
+              id: batteryShowToggle
+              rowId: "batteryShowBar"
               visible: root.batteryAvailable
               label: strings.t("menu.batteryShowBar")
               help: strings.t("help.batteryShowBar")
@@ -1721,6 +2004,8 @@ Ui.Panel {
             }
 
             SliderRow {
+              id: batteryLowSlider
+              rowId: "batteryLow"
               visible: root.batteryAvailable
               label: strings.t("menu.batteryLow")
               help: strings.t("help.batteryLow")
@@ -1760,9 +2045,14 @@ Ui.Panel {
             }
 
             Row {
+              id: batteryPollRow
               visible: root.batteryAvailable
               width: parent.width
               spacing: Style.space(4)
+
+              HoverHandler {
+                onHoveredChanged: if (hovered) root.setCursor("batteryPoll")
+              }
 
               Repeater {
                 model: [
@@ -1782,6 +2072,7 @@ Ui.Panel {
                   selected: String(Number(root.value("battery.poll_seconds", 300)))
                     === modelData.value
                   foreground: Color.popups.text
+                  onHovered: function(isHovered) { if (isHovered) root.setCursor("batteryPoll") }
                   onClicked: root.setValue("battery.poll_seconds", Number(modelData.value))
                 }
               }
@@ -1811,6 +2102,8 @@ Ui.Panel {
             spacing: Style.space(6)
 
             ToggleRow {
+              id: sniperClearToggle
+              rowId: "sniperClear"
               visible: root.sniperCode > 0
               label: strings.t("menu.sniperButton")
               help: strings.t("help.sniperButton").arg(root.sniperButtonName)
@@ -1823,6 +2116,7 @@ Ui.Panel {
               spacing: Style.space(6)
 
               Ui.Button {
+                id: sniperChooseButton
                 width: parent.width - (sniperChooseHint.visible
                   ? sniperChooseHint.width + parent.spacing : 0)
                 text: root.sniperDone
@@ -1833,6 +2127,7 @@ Ui.Panel {
                 iconText: root.sniperDone ? "\uf00c" : ""
                 bordered: true
                 foreground: root.sniperDone ? root.doneColor : Color.popups.text
+                onHovered: function(isHovered) { if (isHovered) root.setCursor("sniperChoose") }
                 onClicked: Quickshell.execDetached([root.cli, "learn"])
               }
 
@@ -1874,6 +2169,8 @@ Ui.Panel {
           }
 
           SliderRow {
+            id: holdSlider
+            rowId: "holdThreshold"
             visible: root.feelTabVisible
             label: strings.t("menu.holdThreshold")
             help: strings.t("help.hold")
@@ -1888,9 +2185,14 @@ Ui.Panel {
           }
 
           Column {
+            id: autoExitRow
             visible: root.feelTabVisible
             width: parent.width
             spacing: Style.space(4)
+
+            HoverHandler {
+              onHoveredChanged: if (hovered) root.setCursor("autoExit")
+            }
 
             Item {
               width: parent.width
@@ -1939,6 +2241,7 @@ Ui.Panel {
                   selected: String(Number(root.value("auto_exit_seconds", 0))) === autoExitChip.modelData.value
                   bordered: true
                   foreground: autoExitChip.flash ? root.doneColor : Color.popups.text
+                  onHovered: function(isHovered) { if (isHovered) root.setCursor("autoExit") }
 
                   Timer {
                     interval: 1200
@@ -2000,9 +2303,11 @@ Ui.Panel {
           }
 
           ActionButton {
+            id: openConfigButton
             visible: root.tab === 2 && root.supportsButtons
             width: parent.width
             idleText: strings.t("menu.openConfig")
+            onHovered: function(isHovered) { if (isHovered) root.setCursor("openConfig") }
             onActivated: Quickshell.execDetached(["omarchy-launch-editor", root.cfgPath])
           }
 
@@ -2016,18 +2321,8 @@ Ui.Panel {
             iconText: done ? "\uf00c" : ""
             bordered: true
             foreground: done ? root.doneColor : (armed ? root.armedColor : Color.popups.text)
-            onClicked: {
-              if (resetButton.done) return
-              if (resetButton.armed) {
-                resetButton.armed = false
-                Quickshell.execDetached([root.cli, "reset"])
-                resetButton.done = true
-                resetDoneTimer.restart()
-              } else {
-                resetButton.armed = true
-                resetArmedTimer.restart()
-              }
-            }
+            onHovered: function(isHovered) { if (isHovered) root.setCursor("reset") }
+            onClicked: root.triggerReset()
 
             Timer {
               id: resetDoneTimer
@@ -2039,6 +2334,74 @@ Ui.Panel {
               id: resetArmedTimer
               interval: 3000
               onTriggered: resetButton.armed = false
+            }
+          }
+        }
+      }
+
+      Ui.CursorSurface {
+        id: cursorRing
+        visible: root.cursorActive && target !== null && target.visible
+        property Item target: root.cursorTarget(root.cursorId)
+        x: target ? target.mapToItem(bodyContent, 0, 0).x - Style.space(4) : 0
+        y: target ? target.mapToItem(bodyContent, 0, 0).y - Style.space(2) : 0
+        width: target ? target.width + Style.space(8) : 0
+        height: target ? target.height + Style.space(4) : 0
+        z: 20
+        hasCursor: true
+        fill: "transparent"
+        foreground: Color.popups.text
+        accent: Color.accent
+        radius: Style.cornerRadius
+      }
+          }
+        }
+
+        Item {
+          id: footerArea
+          width: parent.width
+          height: footerColumn.implicitHeight + Style.space(8)
+
+          Rectangle {
+            anchors.fill: parent
+            color: Color.popups.background
+            opacity: 0.98
+          }
+
+          Column {
+            id: footerColumn
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: Style.space(2)
+            anchors.rightMargin: Style.space(2)
+            anchors.top: parent.top
+            anchors.topMargin: Style.space(4)
+            spacing: Style.space(2)
+
+            Ui.PanelSeparator {
+              width: parent.width
+            }
+
+            Text {
+              width: parent.width
+              text: root.present ? root.connectionLabel(root.connection) : strings.t("mode.none")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.70
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              elide: Text.ElideRight
+            }
+
+            Text {
+              width: parent.width
+              text: strings.t("footer.keys")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.48
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
           }
         }
@@ -2359,8 +2722,13 @@ Ui.Panel {
     property string help: ""
     property bool checked: false
     property bool flash: false
+    property string rowId: ""
 
     signal clicked()
+
+    HoverHandler {
+      onHoveredChanged: if (hovered && toggleRow.rowId !== "") root.setCursor(toggleRow.rowId)
+    }
 
     width: parent ? parent.width : 0
     implicitHeight: Math.max(toggleLabel.implicitHeight, toggleSwitch.implicitHeight) + Style.space(8)
@@ -2438,8 +2806,13 @@ Ui.Panel {
     property var toSlider: null
     property var fromSlider: null
     property bool flash: false
+    property string rowId: ""
 
     signal commit(real configValue)
+
+    HoverHandler {
+      onHoveredChanged: if (hovered && row.rowId !== "") root.setCursor(row.rowId)
+    }
 
     Timer {
       interval: 1200

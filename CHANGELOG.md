@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.0] — 2026-11-25
+
+### Added
+
+- Keyboard-first panel navigation: `j`/`k` moves between controls, `h`/`l`
+  adjusts the current control, `Enter` selects, `1`–`4` switches tabs, `r`
+  rescans and `Esc` closes. Mouse hover feeds the same cursor, so there is only
+  one highlight at a time.
+- A fixed footer at the bottom of the panel: the active connection type on the
+  first line and the keyboard hints on the second. It stays visible on every
+  screen instead of scrolling with the settings.
+
+### Changed
+
+- Device picker labels now put the transport and device type at the end after
+  dots, for example `Wings Tech Gaming Mouse · USB · MS`, instead of a
+  bracketed code prefix.
+
 ## [1.8.4] — 2026-11-25
 
 ### Fixed

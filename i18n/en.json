@@ -149,6 +149,7 @@
   "stats.mouseNote": "Wheel notches are physical wheel events; movement uses the reported DPI when available.",
   "device.limited": "This pointer type is recognised. More settings for it will arrive in a later update.",
   "device.connection": "Connection",
+  "footer.keys": "j/k move  ·  h/l adjust  ·  Enter select  ·  1–4 tabs  ·  Esc close",
   "connection.usb": "USB cable",
   "connection.receiver": "2.4 GHz receiver",
   "connection.bluetooth": "Bluetooth",
