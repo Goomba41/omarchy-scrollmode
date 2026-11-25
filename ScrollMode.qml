@@ -1332,24 +1332,30 @@ Ui.Panel {
           width: parent.width
           spacing: Style.space(4)
 
-          Row {
+          Item {
             width: parent.width
-            spacing: Style.space(4)
+            height: tabRow.height + Style.space(4)
 
-            Repeater {
-              model: root.tabOptions
+            Row {
+              id: tabRow
+              width: parent.width
+              spacing: Style.space(4)
 
-              delegate: Ui.Button {
-                required property var modelData
+              Repeater {
+                model: root.tabOptions
 
-                width: (parent.width - (root.tabOptions.length - 1) * parent.spacing)
-                  / Math.max(1, root.tabOptions.length)
-                height: Style.spacing.controlHeight
-                text: modelData.label
-                bordered: true
-                selected: root.tab === modelData.index
-                foreground: Color.popups.text
-                onClicked: root.tab = modelData.index
+                delegate: Ui.Button {
+                  required property var modelData
+
+                  width: (parent.width - (root.tabOptions.length - 1) * parent.spacing)
+                    / Math.max(1, root.tabOptions.length)
+                  height: Style.spacing.controlHeight
+                  text: modelData.label
+                  bordered: true
+                  selected: root.tab === modelData.index
+                  foreground: Color.popups.text
+                  onClicked: root.tab = modelData.index
+                }
               }
             }
           }
@@ -2040,47 +2046,51 @@ Ui.Panel {
               onCommit: function(v) { root.setValue("battery.low_percent", v) }
             }
 
-            Item {
-              visible: root.batteryAvailable
-              width: parent.width
-              height: Math.max(pollLabel.implicitHeight, pollHint.height)
-
-              Text {
-                id: pollLabel
-                anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                text: strings.t("menu.batteryPoll")
-                textFormat: Text.PlainText
-                color: Color.popups.text
-                font.family: Style.font.family
-                font.pixelSize: Style.font.body
-              }
-
-              HintIcon {
-                id: pollHint
-                anchors.left: pollLabel.right
-                anchors.leftMargin: Style.space(6)
-                anchors.verticalCenter: parent.verticalCenter
-                text: strings.t("help.batteryPoll")
-                rowId: "batteryPollHelp"
-                hasCursor: root.rowHasCursor("batteryPollHelp")
-              }
-            }
-
-            Item {
+            Column {
               id: batteryPollGroup
               visible: root.batteryAvailable
               width: parent.width
-              height: batteryPollRow.height + Style.space(12)
+              spacing: 0
 
               HoverHandler {
-                onHoveredChanged: if (hovered) root.setCursor("batteryPoll")
+                onHoveredChanged: if (hovered && !pollHint.containsMouse)
+                  root.setCursor("batteryPoll")
               }
+
+              Item { width: 1; height: Style.space(4) }
+
+              Item {
+                x: Style.space(6)
+                width: parent.width - Style.space(12)
+                height: Math.max(pollLabel.implicitHeight, pollHint.height)
+
+                Text {
+                  id: pollLabel
+                  anchors.left: parent.left
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: strings.t("menu.batteryPoll")
+                  textFormat: Text.PlainText
+                  color: Color.popups.text
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.body
+                }
+
+                HintIcon {
+                  id: pollHint
+                  anchors.left: pollLabel.right
+                  anchors.leftMargin: Style.space(6)
+                  anchors.verticalCenter: parent.verticalCenter
+                  text: strings.t("help.batteryPoll")
+                  rowId: "batteryPollHelp"
+                  hasCursor: root.rowHasCursor("batteryPollHelp")
+                }
+              }
+
+              Item { width: 1; height: Style.space(4) }
 
               Row {
                 id: batteryPollRow
                 x: Style.space(6)
-                y: Style.space(6)
                 width: parent.width - Style.space(12)
                 spacing: Style.space(4)
 
@@ -2107,6 +2117,8 @@ Ui.Panel {
                   }
                 }
               }
+
+              Item { width: 1; height: Style.space(4) }
             }
           }
 
@@ -2231,14 +2243,14 @@ Ui.Panel {
             id: autoExitRow
             visible: root.feelTabVisible
             width: parent.width
-            spacing: Style.space(4)
+            spacing: Style.space(2)
 
             HoverHandler {
               onHoveredChanged: if (hovered && !autoExitHint.containsMouse)
                 root.setCursor("autoExit")
             }
 
-            Item { width: 1; height: Style.space(6) }
+            Item { width: 1; height: Style.space(4) }
 
             Item {
               x: Style.space(6)
@@ -2307,7 +2319,7 @@ Ui.Panel {
               }
             }
 
-            Item { width: 1; height: Style.space(6) }
+            Item { width: 1; height: Style.space(4) }
           }
 
           Column {
@@ -2945,7 +2957,7 @@ Ui.Panel {
     width: parent ? parent.width : 0
     spacing: Style.space(3)
 
-    Item { width: 1; height: Style.space(6) }
+    Item { width: 1; height: Style.space(4) }
 
     function snap(value) {
       var stepped = Math.round(value / step) * step
@@ -3033,6 +3045,6 @@ Ui.Panel {
       wrapMode: Text.WordWrap
     }
 
-    Item { width: 1; height: Style.space(6) }
+    Item { width: 1; height: Style.space(4) }
   }
 }

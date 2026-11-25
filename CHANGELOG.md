@@ -4,6 +4,16 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.9.6] — 2026-11-25
+
+### Changed
+
+- The Check every control now focuses as one block with its label and hint,
+  matching Auto exit in Feel. Both groups use a smaller 4 px vertical inset
+  inside the focus frame, and slider focus frames use the same tighter
+  vertical padding.
+- The gap below the Scroll/Feel/Device/Stats tab buttons is doubled to 8 px.
+
 ## [1.9.5] — 2026-11-25
 
 ### Changed
