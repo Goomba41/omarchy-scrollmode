@@ -568,7 +568,20 @@ Ui.Panel {
     return notches * cpn / countsPerTurn * ballCircumference / 1000
   }
 
-  readonly property var deviceOptions: {
+  // Keep the dropdown model stable. status.json is reloaded every 1.5 s, and
+  // a fresh options array makes an open popup rebuild its ListView, which can
+  // leave ghost rows over the menu. Update only when the contents change, and
+  // defer updates while the popup is open.
+  property var deviceOptions: []
+  property string deviceOptionsKey: ""
+  property bool deviceOptionsPending: false
+  readonly property bool popupOpen: devicePicker.popupOpen
+
+  function refreshDeviceOptions() {
+    if (devicePicker.popupOpen) {
+      root.deviceOptionsPending = true
+      return
+    }
     var options = []
     var list = root.devices || []
     for (var i = 0; i < list.length; i++) {
@@ -580,7 +593,11 @@ Ui.Panel {
         label: list[i].name + (conn !== "" ? " · " + conn : "") + " · " + code
       })
     }
-    return options
+    var key = JSON.stringify(options)
+    root.deviceOptionsPending = false
+    if (key === root.deviceOptionsKey) return
+    root.deviceOptionsKey = key
+    root.deviceOptions = options
   }
 
   property string pendingId: ""
@@ -702,6 +719,7 @@ Ui.Panel {
       root.cursorIndex = 0
       root.cursorActive = false
       Qt.callLater(root.ensureCursorVisible)
+      if (button.bar) button.bar.hideTooltip(button)
     }
   }
   function ensureCursorVisible() {
@@ -720,6 +738,7 @@ Ui.Panel {
     }
   }
   function setCursor(id) {
+    if (root.popupOpen) return
     var i = root.rowOrder.indexOf(id)
     if (i < 0) return
     root.cursorIndex = i
@@ -976,11 +995,13 @@ Ui.Panel {
   }
 
   Component.onCompleted: {
+    refreshDeviceOptions()
     syncPending()
     Qt.callLater(root.ensureTab)
     installProbe.running = true
   }
   onStatusChanged: {
+    refreshDeviceOptions()
     syncPending()
     Qt.callLater(root.ensureTab)
   }
@@ -1070,7 +1091,7 @@ Ui.Panel {
     anchors.fill: parent
     bar: root.bar
     iconComponent: root.ballIcon
-    tooltipText: (root.serviceState !== "active"
+    tooltipText: root.opened ? "" : (root.serviceState !== "active"
       ? (root.serviceState === "missing" ? strings.t("tip.uninstalled") : strings.t("tip.stopped"))
       : !root.present
       ? strings.t("tip.none")
@@ -1357,6 +1378,9 @@ Ui.Panel {
             showLabel: false
             onChanged: function(value) { root.pendingId = value }
             onHovered: function(isHovered) { if (isHovered) root.setCursor("device") }
+            onPopupOpenChanged: {
+              if (!popupOpen && root.deviceOptionsPending) root.refreshDeviceOptions()
+            }
           }
 
           Row {
@@ -1567,7 +1591,7 @@ Ui.Panel {
                   }
 
                   Ui.PanelToolTip {
-                    visible: dpiChipMouse.containsMouse
+                    visible: dpiChipMouse.containsMouse && !root.popupOpen
                     text: root.dpiText(dpiChip.chipDpi)
                     width: Style.space(140)
                     delay: 250
@@ -2718,6 +2742,7 @@ Ui.Panel {
       Ui.CursorSurface {
         id: cursorRing
         visible: root.cursorActive && target !== null && target.visible
+          && !root.popupOpen
         property Item target: root.cursorTarget(root.cursorId)
         x: target ? target.mapToItem(bodyContent, 0, 0).x : 0
         y: target ? target.mapToItem(bodyContent, 0, 0).y : 0
@@ -2824,6 +2849,8 @@ Ui.Panel {
     property string rowId: ""
     property bool hasCursor: false
     readonly property bool containsMouse: hintMouse.containsMouse
+    readonly property bool activeHint:
+      (hintMouse.containsMouse || hint.hasCursor) && !root.popupOpen
 
     width: Style.space(22)
     height: width
@@ -2840,7 +2867,7 @@ Ui.Panel {
       color: "transparent"
       border.width: 1
       border.color: Color.popups.text
-      opacity: (hintMouse.containsMouse || hint.hasCursor) ? 0.9 : 0.4
+      opacity: hint.activeHint ? 0.9 : 0.4
     }
 
     Text {
@@ -2848,7 +2875,7 @@ Ui.Panel {
       text: "?"
       textFormat: Text.PlainText
       color: Color.popups.text
-      opacity: (hintMouse.containsMouse || hint.hasCursor) ? 0.98 : 0.45
+      opacity: hint.activeHint ? 0.98 : 0.45
       font.family: Style.font.family
       font.pixelSize: Style.font.caption
     }
@@ -2858,6 +2885,7 @@ Ui.Panel {
       width: Style.space(14)
       height: width
       anchors.centerIn: parent
+      enabled: !root.popupOpen
       hoverEnabled: true
       acceptedButtons: Qt.LeftButton
       cursorShape: Qt.WhatsThisCursor
@@ -2868,7 +2896,7 @@ Ui.Panel {
     }
 
     Ui.PanelToolTip {
-      visible: hintMouse.containsMouse || hint.hasCursor
+      visible: hint.activeHint
       text: hint.text
       width: Style.space(240)
       delay: 250

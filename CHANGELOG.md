@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.4] — 2026-11-25
+
+### Fixed
+
+- The device dropdown no longer rebuilds its open popup every time
+  `status.json` is reloaded. The options list is now updated only when its
+  contents change, and updates are deferred until the popup closes, so ghost
+  rows no longer appear over the menu.
+- Hint tooltips, DPI chip tooltips, the panel cursor frame and the bar tooltip
+  are suppressed while the device popup is open, so they cannot paint above
+  the menu.
+
 ## [1.10.3] — 2026-11-25
 
 ### Changed
