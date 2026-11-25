@@ -21,15 +21,17 @@ settings on a left click.
   mode is on. If the daemon dies, the kernel drops the grab.
 - **Any pointing device**: the panel lists every relative pointer it finds,
   labels it with a type code (`[TB]` trackball, `[MS]` mouse, `[TP]` trackpad,
-  `[TA]` tablet, `[UN]` unknown) and you pick the one to grab. Selection
+  `[TA]` tablet, `[UN]` unknown) and a short transport tag (`USB`, `2.4G`,
+  `BT`) where the kernel exposes it, and you pick the one to grab. Selection
   survives reboots.
 - **Pretty device names**: udev vendor/model names, HID++ names for Logitech
   receivers.
 - **Drawn device icons**: the trackball is a shaded sphere with a specular
   highlight and a fine texture, red for pointer, blue for scroll, amber for
   sniper. A mouse gets a cursor-arrow badge that turns around its vertical
-  axis: slowly while idle, and with white air streams when kicked. Icons open
-  with a short glide and fill both the bar slot and the 44 px header.
+  axis: slowly while idle, and with white air streams when kicked. Its prism
+  end face and bright rim stay readable as it turns through edge-on. Icons
+  open with a short glide and fill both the bar slot and the 44 px header.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
@@ -292,14 +294,18 @@ is stored as `device.selected` and the daemon re-grabs it.
 ### Device types and applicable settings
 
 The daemon classifies every pointer when it connects and keeps the result in
-`status.json` as `kind`, `code`, `confidence`, `sources`, `wireless` and the
-`supportsScroll` / `supportsStats` / `supportsButtons` flags. The panel uses
-those flags to show only the applicable parts:
+`status.json` as `kind`, `code`, `confidence`, `sources`, `wireless`,
+`connection` and the `supportsScroll` / `supportsStats` / `supportsButtons`
+flags. `connection` is `usb`, `receiver`, `bluetooth` or `unknown`; the
+picker shows a short tag and the Device tab spells it out. The panel uses the
+capability flags to show only the applicable parts:
 
 - **Trackball** — Scroll, Feel, Device and Stats; battery when wireless.
-- **Mouse** — Device and Stats only. The Device tab shows the picker, battery
-  when wireless, and a note that more mouse settings are coming. Scroll/Feel,
-  sniper and hotkeys are hidden.
+- **Mouse** — Device and Stats only. The Device tab shows the picker, its
+  connection type, battery when wireless, and a note that more mouse settings
+  are coming. Scroll/Feel, sniper and hotkeys are hidden; the tab content is
+  also gated by `supportsScroll`, so it cannot leak through while the daemon
+  switches devices.
 - **Trackpad / tablet / unknown** — Device only for now; unknown pointers keep
   the scroll tabs so an unclassified trackball still works.
 

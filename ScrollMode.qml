@@ -119,6 +119,7 @@ Ui.Panel {
   readonly property string activeName: (status && status.name) ? String(status.name) : ""
   readonly property string deviceKind: (status && status.kind) ? String(status.kind) : ""
   readonly property string deviceCode: (status && status.code) ? String(status.code) : "UN"
+  readonly property string connection: (status && status.connection) ? String(status.connection) : "unknown"
   readonly property string deviceTitle: root.deviceKindLabel(root.deviceKind)
   readonly property bool supportsScroll: status && status.supportsScroll !== undefined
     ? status.supportsScroll === true
@@ -129,6 +130,11 @@ Ui.Panel {
   readonly property bool supportsButtons: status && status.supportsButtons !== undefined
     ? status.supportsButtons === true
     : (root.deviceKind === "" || root.deviceKind === "trackball" || root.deviceKind === "unknown")
+  // Scroll and Feel are only real for devices that support scroll mode. The
+  // content also has to check this: after switching to a mouse `tab` may still
+  // hold its old value for one frame while tabOptions is rebuilt.
+  readonly property bool scrollTabVisible: root.supportsScroll && root.tab === 0
+  readonly property bool feelTabVisible: root.supportsScroll && root.tab === 1
 
   function deviceKindLabel(kind) {
     if (kind === "trackball") return strings.t("device.kind.trackball")
@@ -144,6 +150,18 @@ Ui.Panel {
     if (kind === "trackpad") return "TP"
     if (kind === "tablet") return "TA"
     return "UN"
+  }
+  function connectionLabel(value) {
+    if (value === "usb") return strings.t("connection.usb")
+    if (value === "receiver") return strings.t("connection.receiver")
+    if (value === "bluetooth") return strings.t("connection.bluetooth")
+    return strings.t("connection.unknown")
+  }
+  function connectionShort(value) {
+    if (value === "usb") return strings.t("connection.shortUsb")
+    if (value === "receiver") return strings.t("connection.shortReceiver")
+    if (value === "bluetooth") return strings.t("connection.shortBluetooth")
+    return strings.t("connection.shortUnknown")
   }
   readonly property int hiddenCount: (status && status.hidden) ? Number(status.hidden) : 0
   readonly property bool sniperAvailable: !!(status && status.sniperAvailable === true)
@@ -448,7 +466,11 @@ Ui.Panel {
     for (var i = 0; i < list.length; i++) {
       var kind = list[i].kind ? String(list[i].kind) : "unknown"
       var code = list[i].code ? String(list[i].code) : root.deviceCodeForKind(kind)
-      options.push({ value: list[i].id, label: "[" + code + "] " + list[i].name })
+      var conn = list[i].connection ? root.connectionShort(String(list[i].connection)) : ""
+      options.push({
+        value: list[i].id,
+        label: "[" + code + "] " + list[i].name + (conn !== "" ? " · " + conn : "")
+      })
     }
     return options
   }
@@ -479,6 +501,13 @@ Ui.Panel {
       if (options[i].index === root.tab) return
     root.tab = options.length ? options[0].index : 2
   }
+  onDeviceKindChanged: {
+    if (root.deviceKind === "mouse" && (root.tab === 0 || root.tab === 1))
+      root.tab = 2
+    Qt.callLater(root.ensureTab)
+  }
+  onSupportsScrollChanged: Qt.callLater(root.ensureTab)
+  onTabOptionsChanged: Qt.callLater(root.ensureTab)
   property bool sniperDone: false
   property int lastSniperCode: 0
 
@@ -571,12 +600,18 @@ Ui.Panel {
 
   Component.onCompleted: {
     syncPending()
-    ensureTab()
+    Qt.callLater(root.ensureTab)
     installProbe.running = true
   }
   onStatusChanged: {
     syncPending()
-    ensureTab()
+    Qt.callLater(root.ensureTab)
+  }
+  onActiveIdChanged: {
+    // The daemon can switch devices from the CLI while the panel is open.
+    // Keep the dropdown from claiming that an older device is still pending.
+    if (root.activeId !== "") root.pendingId = root.activeId
+    Qt.callLater(root.ensureTab)
   }
 
   Process {
@@ -1497,7 +1532,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.speed")
             help: strings.t("help.speed")
             valueText: Math.round(sliderValue) + " %"
@@ -1518,7 +1553,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.sniper")
             help: strings.t("help.sniperSpeed")
             valueText: Math.round(sliderValue) + " %"
@@ -1534,26 +1569,26 @@ Ui.Panel {
           }
 
           Ui.PanelSeparator {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             width: parent.width
           }
 
           ToggleRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.invertVertical")
             checked: root.bool("scroll.invert_vertical")
             onClicked: root.setValue("scroll.invert_vertical", !root.bool("scroll.invert_vertical"))
           }
 
           ToggleRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.invertHorizontal")
             checked: root.bool("scroll.invert_horizontal")
             onClicked: root.setValue("scroll.invert_horizontal", !root.bool("scroll.invert_horizontal"))
           }
 
           ToggleRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.axisLock")
             help: strings.t("help.axisLock")
             checked: root.bool("scroll.axis_lock")
@@ -1561,7 +1596,7 @@ Ui.Panel {
           }
 
           ToggleRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.hiRes")
             help: strings.t("help.smooth")
             checked: root.bool("scroll.hi_res")
@@ -1569,7 +1604,7 @@ Ui.Panel {
           }
 
           ToggleRow {
-            visible: root.tab === 0
+            visible: root.scrollTabVisible
             label: strings.t("menu.exitOnClick")
             help: strings.t("help.exitOnClick")
             checked: root.bool("exit_on_click")
@@ -1577,7 +1612,7 @@ Ui.Panel {
           }
 
           ToggleRow {
-            visible: root.tab === 1
+            visible: root.feelTabVisible
             label: strings.t("menu.inertia")
             help: strings.t("help.inertia")
             checked: root.bool("scroll.inertia")
@@ -1585,7 +1620,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.tab === 1 && root.bool("scroll.inertia")
+            visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaTrigger")
             help: strings.t("help.inertiaTrigger")
             valueText: strings.t("menu.perSecond").arg(Math.round(sliderValue))
@@ -1599,7 +1634,7 @@ Ui.Panel {
           }
 
           SliderRow {
-            visible: root.tab === 1 && root.bool("scroll.inertia")
+            visible: root.feelTabVisible && root.bool("scroll.inertia")
             label: strings.t("menu.inertiaCoast")
             help: strings.t("help.inertiaCoast")
             valueText: Math.round(sliderValue) + " %"
@@ -1610,6 +1645,12 @@ Ui.Panel {
             integer: true
             source: Number(root.value("scroll.inertia_strength", 100))
             onCommit: function(v) { root.setValue("scroll.inertia_strength", v) }
+          }
+
+          StatRow {
+            visible: root.tab === 2
+            label: strings.t("device.connection")
+            value: root.connectionLabel(root.connection)
           }
 
           Column {
@@ -1828,12 +1869,12 @@ Ui.Panel {
           }
 
           Ui.PanelSeparator {
-            visible: root.tab === 1
+            visible: root.feelTabVisible
             width: parent.width
           }
 
           SliderRow {
-            visible: root.tab === 1
+            visible: root.feelTabVisible
             label: strings.t("menu.holdThreshold")
             help: strings.t("help.hold")
             valueText: strings.t("menu.ms").arg(Math.round(sliderValue))
@@ -1847,7 +1888,7 @@ Ui.Panel {
           }
 
           Column {
-            visible: root.tab === 1
+            visible: root.feelTabVisible
             width: parent.width
             spacing: Style.space(4)
 

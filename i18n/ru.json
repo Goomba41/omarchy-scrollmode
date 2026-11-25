@@ -147,5 +147,14 @@
   "stats.mouseEmpty": "Пока нет данных — подвигай мышь или покрути колесо.",
   "stats.mouseNoDpi": "Для сравнений расстояний нужен DPI мыши. Щелчки колеса и клики уже собираются.",
   "stats.mouseNote": "Щелчки колеса — это физические события колеса; движение переводится в метры, когда известен DPI.",
-  "device.limited": "Этот тип указателя распознан. Остальные настройки для него появятся позже."
+  "device.limited": "Этот тип указателя распознан. Остальные настройки для него появятся позже.",
+  "device.connection": "Подключение",
+  "connection.usb": "Кабель USB",
+  "connection.receiver": "Приёмник 2.4 ГГц",
+  "connection.bluetooth": "Bluetooth",
+  "connection.unknown": "Неизвестно",
+  "connection.shortUsb": "USB",
+  "connection.shortReceiver": "2.4G",
+  "connection.shortBluetooth": "BT",
+  "connection.shortUnknown": "?"
 }

@@ -147,5 +147,14 @@
   "stats.mouseEmpty": "No mouse data yet — move the mouse or scroll the wheel.",
   "stats.mouseNoDpi": "Distance comparisons need the mouse DPI. Wheel and click stats are already collected.",
   "stats.mouseNote": "Wheel notches are physical wheel events; movement uses the reported DPI when available.",
-  "device.limited": "This pointer type is recognised. More settings for it will arrive in a later update."
+  "device.limited": "This pointer type is recognised. More settings for it will arrive in a later update.",
+  "device.connection": "Connection",
+  "connection.usb": "USB cable",
+  "connection.receiver": "2.4 GHz receiver",
+  "connection.bluetooth": "Bluetooth",
+  "connection.unknown": "Unknown",
+  "connection.shortUsb": "USB",
+  "connection.shortReceiver": "2.4G",
+  "connection.shortBluetooth": "BT",
+  "connection.shortUnknown": "?"
 }

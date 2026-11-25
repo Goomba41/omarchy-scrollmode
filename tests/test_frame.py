@@ -355,6 +355,15 @@ def main():
     print("classified trackball:", trackball)
     assert trackball["kind"] == "trackball" and trackball["code"] == "TB", trackball
     assert trackball["confidence"] == "high" and trackball["wireless"] is True, trackball
+    assert trackball["connection"] == "receiver", trackball
+    assert scrollmoded._pointer_connection(
+        "Wings Tech Gaming Mouse", {"ID_BUS": "usb"}) == "usb"
+    assert scrollmoded._pointer_connection(
+        "Mystery mouse", {"ID_BUS": "usb", "ID_MODEL": "USB_Receiver"}) == "receiver"
+    assert scrollmoded._pointer_connection(
+        "Mystery mouse", {"ID_BUS": "bluetooth"}) == "bluetooth"
+    assert scrollmoded._pointer_connection(
+        "Mystery mouse", {}) == "unknown"
     tagged = scrollmoded.classify_pointer(
         "Mystery pointer", "Mystery pointer", {"ID_INPUT_TRACKBALL": "1"}, {})
     assert tagged["kind"] == "trackball" and tagged["code"] == "TB", tagged
@@ -363,6 +372,7 @@ def main():
     mouse = scrollmoded.classify_pointer(
         "Wings Tech Gaming Mouse", "Wings Tech Gaming Mouse", {"ID_BUS": "usb"}, {})
     assert mouse["kind"] == "mouse" and mouse["code"] == "MS", mouse
+    assert mouse["connection"] == "usb", mouse
     trackpad = scrollmoded.classify_pointer("Magic Trackpad", "Magic Trackpad", {}, {})
     assert trackpad["kind"] == "trackpad" and trackpad["code"] == "TP", trackpad
     unknown = scrollmoded.classify_pointer(

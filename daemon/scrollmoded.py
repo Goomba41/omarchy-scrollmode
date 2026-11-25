@@ -270,6 +270,29 @@ def _pointer_wireless(name: str, props: dict) -> bool:
     return "receiver" in model or "dongle" in model or "receiver" in name.lower()
 
 
+def _pointer_connection(name: str, props: dict) -> str:
+    """Best-effort transport label: usb, receiver, bluetooth or unknown."""
+    bus = str(props.get("ID_BUS") or "").lower()
+    haystack = " ".join(
+        str(value or "")
+        for value in (
+            name,
+            props.get("ID_MODEL"),
+            props.get("ID_MODEL_FROM_DATABASE"),
+            props.get("ID_MODEL_ENC"),
+            props.get("ID_USB_MODEL"),
+            props.get("ID_USB_MODEL_ENC"),
+        )
+    ).replace("_", " ").replace("-", " ").lower()
+    if bus == "bluetooth" or "bluetooth" in haystack:
+        return "bluetooth"
+    if "receiver" in haystack or "dongle" in haystack:
+        return "receiver"
+    if bus == "usb":
+        return "usb"
+    return "unknown"
+
+
 def _with_kind(kind: str, confidence: str, source: str) -> dict:
     return {
         "kind": kind,
@@ -289,6 +312,7 @@ def classify_pointer(name: str, raw_name: str, props: dict, caps: dict, hidpp_ty
         kind = HIDPP_TYPE_KINDS[hidpp_type]
         result = _with_kind(kind, "high", "hidpp:0x0005")
         result["wireless"] = _pointer_wireless(name, props)
+        result["connection"] = _pointer_connection(f"{raw_name} {name}", props)
         return result
 
     if str(props.get("ID_INPUT_TRACKBALL") or "") == "1":
@@ -322,6 +346,7 @@ def classify_pointer(name: str, raw_name: str, props: dict, caps: dict, hidpp_ty
         else:
             result = _with_kind("unknown", "low", "evdev:relative")
     result["wireless"] = _pointer_wireless(name, props)
+    result["connection"] = _pointer_connection(f"{raw_name} {name}", props)
     return result
 
 
@@ -1409,6 +1434,7 @@ class Daemon:
         active_code = "UN"
         active_confidence = "low"
         active_wireless = False
+        active_connection = "unknown"
         identities = self.read_identity_cache()
         for device in devices:
             name = device["name"]
@@ -1429,6 +1455,7 @@ class Daemon:
             confidence = device.get("confidence", "low")
             sources = list(device.get("sources") or [])
             wireless = bool(device.get("wireless"))
+            connection = str(device.get("connection") or "unknown")
             hidpp_type = cached.get("type") if cached else None
             if device["id"] == self.active_id and self.hidpp_type is not None:
                 hidpp_type = self.hidpp_type
@@ -1452,6 +1479,7 @@ class Daemon:
                 "confidence": confidence,
                 "sources": sources,
                 "wireless": wireless,
+                "connection": connection,
             })
             if device["id"] == self.active_id:
                 active_name = name
@@ -1459,6 +1487,7 @@ class Daemon:
                 active_code = code
                 active_confidence = confidence
                 active_wireless = wireless
+                active_connection = connection
 
         self.device_kind = active_kind or "unknown"
         self.supports_scroll = self.device_kind in ("trackball", "unknown")
@@ -1488,6 +1517,7 @@ class Daemon:
             "code": active_code,
             "confidence": active_confidence,
             "wireless": active_wireless,
+            "connection": active_connection,
             "supportsScroll": self.supports_scroll,
             "supportsStats": self.supports_stats,
             "supportsButtons": self.supports_buttons,

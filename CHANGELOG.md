@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.8.4] — 2026-11-25
+
+### Fixed
+
+- The Scroll and Feel tabs no longer leak onto mouse devices. Their content
+  is gated by the active device's scroll capability, and the panel falls back
+  to the Device tab as soon as a mouse becomes active.
+- The cursor arrow now has a proper prism end face: a smaller back face,
+  connecting side faces and a bright beveled rim. It reads as a solid 3D
+  pointer at every angle instead of a flat ribbon.
+
+### Added
+
+- Connection type in the device picker and the Device tab: USB cable, 2.4 GHz
+  receiver, Bluetooth or unknown.
+
 ## [1.8.3] — 2026-11-24
 
 ### Fixed

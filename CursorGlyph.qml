@@ -197,18 +197,35 @@ Item {
       // side faces keep the pointer visible while the front face is edge-on.
       var sign = ca < 0 ? -1 : 1
       var sx = sign * Math.pow(Math.abs(ca), 0.72)
-      var depth = Math.max(1.4, w * 0.085) * sa
+      var depth = Math.max(2.0, w * 0.11) * sa
+      // A true prism: the back face is a little smaller than the front, so
+      // the connecting side faces read as a solid, beveled end cap instead of
+      // a flat ribbon. Edge-on the cap stays visible between the two rims.
+      var backScale = 0.88 + 0.12 * Math.abs(ca)
 
       function project(p) {
         return [cx + (ox + p[0] * scale - cx) * sx, oy + p[1] * scale]
       }
 
       var front = []
+      for (var i = 0; i < points.length; i++)
+        front.push(project(points[i]))
+
+      var bcx = 0
+      var bcy = 0
+      for (var c = 0; c < front.length; c++) {
+        bcx += front[c][0]
+        bcy += front[c][1]
+      }
+      bcx /= Math.max(1, front.length)
+      bcy /= Math.max(1, front.length)
+
       var back = []
-      for (var i = 0; i < points.length; i++) {
-        var f = project(points[i])
-        front.push(f)
-        back.push([f[0] + depth, f[1]])
+      for (var b = 0; b < front.length; b++) {
+        back.push([
+          bcx + (front[b][0] - bcx) * backScale + depth,
+          bcy + (front[b][1] - bcy) * backScale
+        ])
       }
 
       if (cursor.shadow) {
@@ -227,11 +244,11 @@ Item {
       for (var b = 1; b < back.length; b++)
         ctx.lineTo(back[b][0], back[b][1])
       ctx.closePath()
-      ctx.fillStyle = Qt.darker(cursor.color, 2.25)
-      ctx.globalAlpha = 0.94
+      ctx.fillStyle = Qt.darker(cursor.color, 2.05)
+      ctx.globalAlpha = 0.96
       ctx.fill()
 
-      ctx.fillStyle = Qt.darker(cursor.color, 1.85)
+      ctx.fillStyle = Qt.darker(cursor.color, 1.72)
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
         ctx.beginPath()
@@ -244,15 +261,15 @@ Item {
       }
       ctx.globalAlpha = 1
 
-      // A faint bevel on the far edge keeps the extrusion from turning into a
-      // dark blink when the front face is exactly edge-on.
+      // A bright bevel on the far rim is the visible end face of the prism.
+      // It stays readable when the front face is exactly edge-on.
       ctx.beginPath()
       ctx.moveTo(back[0][0], back[0][1])
       for (var bo = 1; bo < back.length; bo++)
         ctx.lineTo(back[bo][0], back[bo][1])
       ctx.closePath()
-      ctx.lineWidth = Math.max(1, w * 0.012)
-      ctx.strokeStyle = "rgba(255,255,255,0.16)"
+      ctx.lineWidth = Math.max(1, w * 0.016)
+      ctx.strokeStyle = "rgba(255,255,255,0.24)"
       ctx.stroke()
 
       // Front face. The gradient is projected with the face, so it turns with
@@ -297,8 +314,8 @@ Item {
       for (var m = 1; m < front.length; m++)
         ctx.lineTo(front[m][0], front[m][1])
       ctx.closePath()
-      ctx.lineWidth = Math.max(1, w * 0.014)
-      ctx.strokeStyle = "rgba(255,255,255,0.24)"
+      ctx.lineWidth = Math.max(1, w * 0.016)
+      ctx.strokeStyle = "rgba(255,255,255,0.30)"
       ctx.stroke()
     }
 
