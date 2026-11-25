@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.3] — 2026-11-25
+
+### Changed
+
+- The Manual DPI slider now says that it only affects usage statistics and
+  does not change the DPI stored on the mouse. The `?` hint repeats the same
+  distinction.
+
 ## [1.10.2] — 2026-11-25
 
 ### Changed

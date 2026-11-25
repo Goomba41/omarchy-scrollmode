@@ -169,5 +169,6 @@
   "dpi.startLibratbag": "Start libratbag",
   "dpi.manual": "Manual DPI",
   "dpi.clearManual": "Clear manual DPI",
-  "help.dpiManual": "Used for distance statistics when the mouse does not report its DPI."
+  "help.dpiManual": "Distance statistics only. It does not change the DPI stored on the mouse.",
+  "dpi.manualStatsOnly": "Only affects usage statistics — the mouse DPI is not changed."
 }

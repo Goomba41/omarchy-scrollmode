@@ -1629,6 +1629,7 @@ Ui.Panel {
               visible: root.dpiSource === "none" || root.dpiSource === "manual"
               label: strings.t("dpi.manual")
               help: strings.t("help.dpiManual")
+              hint: strings.t("dpi.manualStatsOnly")
               valueText: Math.round(sliderValue) + " " + strings.t("dpi.unit")
               from: 50
               to: 64000

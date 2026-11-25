@@ -169,5 +169,6 @@
   "dpi.startLibratbag": "Запустить libratbag",
   "dpi.manual": "DPI вручную",
   "dpi.clearManual": "Сбросить DPI",
-  "help.dpiManual": "Используется для подсчёта расстояния, когда мышь не отдаёт DPI."
+  "help.dpiManual": "Только для подсчёта расстояния. DPI на самой мыши не меняется.",
+  "dpi.manualStatsOnly": "Влияет только на статистику использования — реальный DPI мыши не меняется."
 }
