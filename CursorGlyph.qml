@@ -145,6 +145,10 @@ Item {
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
+      // Sharp side quads can otherwise throw long miter spikes when turned.
+      ctx.lineJoin = "round"
+      ctx.lineCap = "round"
+      ctx.miterLimit = 2
 
       function oval(cx, cy, rx, ry) {
         ctx.save()
@@ -187,19 +191,21 @@ Item {
       if (w <= 0 || h <= 0) return
       var cx = w / 2
       var cy = h / 2
+      var baseYaw = 0.0
 
-      // The ordinary system pointer silhouette, with smoothed corners:
-      // tip, right wing, deep notch and the familiar offset tail.
+      // Traced from the supplied reference: a standard pointer with a
+      // vertical left edge, a narrow notch and a long diagonal tail.
       var local = [
-        [2.8, 1.6],
-        [18.6, 11.9],
-        [12.2, 12.6],
-        [15.8, 18.8],
-        [11.6, 20.2],
-        [8.8, 13.7],
-        [2.8, 17.6]
+        [0.0, 0.0],
+        [11.97, 11.17],
+        [6.20, 11.69],
+        [6.62, 12.63],
+        [9.44, 19.01],
+        [7.32, 19.95],
+        [4.13, 12.63],
+        [0.0, 16.43]
       ]
-      var points = roundedPolygon(local, 1.50)
+      var points = roundedPolygon(local, 0.90)
 
       var minX = points[0][0]
       var maxX = points[0][0]
@@ -218,13 +224,10 @@ Item {
       var originX = (minX + maxX) / 2
       var originY = (minY + maxY) / 2
 
-      // True extrusion: the same outline at z = +t/2 and z = -t/2, rotated
-      // around Y, then projected once. No per-face shrinking or fake offsets,
-      // so the silhouette stays even at every angle.
-      var rad = (cursor.angle + 18) * Math.PI / 180
+      var rad = baseYaw + cursor.angle * Math.PI / 180
       var ca = Math.cos(rad)
       var sa = Math.sin(rad)
-      var halfDepth = w * 0.08
+      var halfDepth = w * 0.07
       var focal = w * 3.6
 
       function rotateY(x, y, z) {
@@ -236,28 +239,29 @@ Item {
         return [cx + v[0] * s, cy + v[1] * s]
       }
 
-      var front3 = []
-      var back3 = []
-      var front = []
-      var back = []
-      for (var i = 0; i < points.length; i++) {
-        var x = (points[i][0] - originX) * scale
-        var y = (points[i][1] - originY) * scale
-        var f3 = rotateY(x, y, halfDepth)
-        var b3 = rotateY(x, y, -halfDepth)
-        front3.push(f3)
-        back3.push(b3)
-        front.push(project(f3))
-        back.push(project(b3))
+      function buildLayer(pts, z) {
+        var v3 = []
+        var v2 = []
+        for (var i = 0; i < pts.length; i++) {
+          var x = (pts[i][0] - originX) * scale
+          var y = (pts[i][1] - originY) * scale
+          var v = rotateY(x, y, z)
+          v3.push(v)
+          v2.push(project(v))
+        }
+        return { v3: v3, v2: v2 }
       }
+
+      var frontLayer = buildLayer(points, halfDepth)
+      var backLayer = buildLayer(points, -halfDepth)
 
       if (cursor.shadow) {
         var shadow = ctx.createRadialGradient(
-          cx + w * 0.06, h * 0.82, 0, cx + w * 0.06, h * 0.82, w * 0.40)
+          cx, h * 0.84, 0, cx, h * 0.84, w * 0.40)
         shadow.addColorStop(0, "rgba(0,0,0,0.34)")
         shadow.addColorStop(1, "rgba(0,0,0,0)")
         ctx.fillStyle = shadow
-        oval(cx + w * 0.06, h * 0.82, w * 0.38, h * 0.10)
+        oval(cx, h * 0.84, w * 0.28, h * 0.08)
         ctx.fill()
       }
 
@@ -277,25 +281,27 @@ Item {
       }
 
       var faces = []
-      faces.push({ kind: "front", pts: front, z: averageZ(front3) })
-      faces.push({ kind: "back", pts: back, z: averageZ(back3) })
-      for (var e = 0; e < front.length; e++) {
-        var n = (e + 1) % front.length
+      faces.push({ kind: "front", pts: frontLayer.v2,
+                   z: averageZ(frontLayer.v3) })
+      faces.push({ kind: "back", pts: backLayer.v2,
+                   z: averageZ(backLayer.v3) })
+      for (var e = 0; e < points.length; e++) {
+        var n = (e + 1) % points.length
         faces.push({
           kind: "side",
-          pts: [front[e], front[n], back[n], back[e]],
-          z: (front3[e][2] + front3[n][2] + back3[n][2] + back3[e][2]) / 4
+          pts: [frontLayer.v2[e], frontLayer.v2[n],
+                backLayer.v2[n], backLayer.v2[e]],
+          z: (frontLayer.v3[e][2] + frontLayer.v3[n][2]
+              + backLayer.v3[n][2] + backLayer.v3[e][2]) / 4
         })
       }
 
-      // Flat, slightly different face colours: a lit front, the base colour
-      // on the side walls and a slightly darker rear. No gradients, so no
-      // plane can look pressed in and no edge changes tone while turning.
       var frontColor = Qt.lighter(cursor.color, 1.12)
-      var sideColor = Qt.lighter(cursor.color, 1.05)
+      var bevelColor = Qt.lighter(cursor.color, 1.06)
+      var sideColor = Qt.lighter(cursor.color, 1.02)
       var backColor = cursor.color
 
-      // Seal the seams before sorting, using the side colour.
+      // Seal every seam with the side colour first.
       ctx.fillStyle = sideColor
       ctx.strokeStyle = sideColor
       ctx.lineWidth = Math.max(0.7, w * 0.008)
@@ -308,14 +314,29 @@ Item {
       faces.sort(function(a, b) { return a.z - b.z })
       for (var f = 0; f < faces.length; f++) {
         var face = faces[f]
-        var fill = face.kind === "front" ? frontColor
-          : (face.kind === "back" ? backColor : sideColor)
-        polyPath(face.pts)
-        ctx.fillStyle = fill
-        ctx.strokeStyle = fill
-        ctx.lineWidth = Math.max(0.8, w * 0.010)
-        ctx.fill()
-        ctx.stroke()
+        if (face.kind === "front") {
+          polyPath(face.pts)
+          ctx.fillStyle = frontColor
+          ctx.fill()
+          // A clipped inner stroke gives a clean bevel of equal width on all
+          // edges without any offset geometry that could spike when turned.
+          ctx.save()
+          polyPath(face.pts)
+          ctx.clip()
+          polyPath(face.pts)
+          ctx.strokeStyle = bevelColor
+          ctx.lineWidth = Math.max(1, w * 0.08)
+          ctx.stroke()
+          ctx.restore()
+        } else {
+          var fill = face.kind === "back" ? backColor : sideColor
+          polyPath(face.pts)
+          ctx.fillStyle = fill
+          ctx.strokeStyle = fill
+          ctx.lineWidth = Math.max(0.8, w * 0.010)
+          ctx.fill()
+          ctx.stroke()
+        }
       }
     }
 

@@ -4,6 +4,22 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.10] — 2026-11-26
+
+### Changed
+
+- Rebuilt the cursor from the supplied reference image: the standard pointer
+  silhouette with a vertical left edge, a narrow notch, a right wing and a long
+  diagonal tail. Corners are rounded.
+- The glyph is a front-facing beveled 3D slab: outer silhouette, inset front
+  face, full rear face and a uniform clipped bevel. Side and rear walls stay
+  opaque.
+- Every face derives from the mode colour. The front is lightest, the bevel and
+  sides are slightly lighter than the base, and the rear keeps the base colour.
+  Pointer, scroll and sniper therefore tint the whole object.
+- Removed the upright/symmetric experiments. The reference orientation is used
+  directly, without an extra 45° rotation.
+
 ## [1.10.8] — 2026-11-26
 
 ### Changed
