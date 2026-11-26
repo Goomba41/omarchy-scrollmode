@@ -450,19 +450,17 @@ Item {
       if (amount <= 0) return
       var phase = (cursor.angle * 0.16) % Math.max(4, cursor.size * 0.22)
       ctx.lineCap = "round"
-      // Streams follow the cursor's diagonal instead of running flat.
+      // Streams run perpendicular to the tip-to-notch axis and span the
+      // pointer's actual width across that axis.
       ctx.save()
       ctx.translate(w / 2, h / 2)
-      ctx.rotate(Math.PI / 4)
-      ctx.translate(-w / 2, -h / 2)
-      var overscan = Math.hypot(w, h) * 0.35
+      ctx.rotate(Math.atan2(9.7627, 4.3729) - Math.PI / 2)
+      var span = cursor.size * 0.90
       for (var i = 0; i < 3; i++) {
-        var y = h * (0.53 + i * 0.10)
+        var y = (i - 1) * cursor.size * 0.12
         var alpha = (0.10 + amount * 0.36) * (1 - i * 0.14)
-        var start = -cursor.airMargin * 0.35 + (i % 2 ? -phase : phase)
-          - overscan
-        var end = w + cursor.airMargin * 0.35 - (i % 2 ? phase : -phase)
-          + overscan
+        var start = -span / 2 + (i % 2 ? -phase : phase)
+        var end = span / 2 - (i % 2 ? phase : -phase)
         var grad = ctx.createLinearGradient(start, y, end, y)
         grad.addColorStop(0, "rgba(255,255,255,0)")
         grad.addColorStop(0.14, "rgba(255,255,255," + alpha + ")")
@@ -470,8 +468,8 @@ Item {
         grad.addColorStop(1, "rgba(255,255,255,0)")
         ctx.beginPath()
         ctx.moveTo(start, y)
-        ctx.quadraticCurveTo((start + end) / 2, y + (i % 2 ? -1 : 1) * h * 0.018,
-          end, y)
+        ctx.quadraticCurveTo((start + end) / 2,
+          y + (i % 2 ? -1 : 1) * cursor.size * 0.018, end, y)
         ctx.strokeStyle = grad
         ctx.lineWidth = Math.max(1, cursor.size * (0.017 + amount * 0.022))
         ctx.stroke()
