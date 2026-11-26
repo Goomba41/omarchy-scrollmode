@@ -33,11 +33,11 @@ settings on a left click.
   receivers.
 - **Drawn device icons**: the trackball is a shaded sphere with a specular
   highlight and a fine texture, red for pointer, blue for scroll, amber for
-  sniper. A mouse gets a full 3D cursor arrow — tip, wing, notch and tail,
-  with rounded corners and opaque side walls — that turns around its vertical
-  axis: slowly while idle, and with white air streams when kicked. Its
-  beveled rim stays readable as it turns through edge-on. Icons open with a
-  short glide and fill both the bar slot and the 44 px header.
+  sniper. A mouse gets a full 3D cursor arrow — a 40-point contour with soft
+  rounded ends — that turns around the line from its top corner to the notch:
+  slowly while idle, and with white air streams when kicked. Its tinted rim
+  stays readable as it turns through edge-on. Icons open with a short glide
+  and fill both the bar slot and the 44 px header.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.
@@ -179,9 +179,10 @@ Click it to give it a deliberate spin: the ball accelerates, then brakes back
 to the slow idle turn, with white air streaks while it is moving fast.
 
 For a mouse the header and bar icon switch to a cursor-arrow badge. It glides
-in when the panel opens and starts a slow turn around its vertical axis; while
-idle it keeps that calm rotation. Click it to spin it up, then brake back to
-idle, with horizontal white air streams while it is fast.
+in when the panel opens and starts a slow turn around the line from its top
+corner to the notch; while idle it keeps that calm rotation. Click it to spin
+it up, then brake back to idle, with horizontal white air streams while it is
+fast.
 
 <p align="center">
   <img src="docs/icons.png" alt="pointer, scroll and sniper balls" width="120">

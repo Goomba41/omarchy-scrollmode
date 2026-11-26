@@ -1,11 +1,12 @@
 import QtQuick
 import qs.Commons
 
-// A cursor-arrow badge for mouse devices. This is a full pointer silhouette
-// (tip, wing, notch and tail), not a triangle: the rounded outline is
-// extruded into a solid 3D slab that turns around its vertical axis. Idle
-// rotation is calm, a click kicks it fast with air streaks, and opening glides
-// the glyph into place.
+// Cursor-arrow badge for mouse devices.
+//
+// The silhouette is traced from the supplied reference as a 40-point contour,
+// then softened with one smoothing pass. It is extruded into a solid 3D slab
+// that turns around the line from the top corner to the notch; soft rounded
+// ends and tinted rims keep the shape readable while it rotates.
 Item {
   id: cursor
 
@@ -24,8 +25,8 @@ Item {
   property real kickElapsed: 0
   property bool airWasVisible: false
 
-  readonly property real slowSpeed: 28      // deg/s, one calm turn every ~13 s
-  readonly property real kickSpeed: 900     // deg/s, deliberate flick
+  readonly property real slowSpeed: 28
+  readonly property real kickSpeed: 900
   readonly property real kickSeconds: 1.8
   readonly property real airThreshold: 220
   readonly property real airMargin: Math.max(3, size * 0.10)
@@ -137,7 +138,7 @@ Item {
   }
 
   Canvas {
-    id: arrowCanvas
+    id: cursorCanvas
     anchors.fill: parent
     z: 1
     antialiasing: true
@@ -145,12 +146,11 @@ Item {
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
-      // Sharp side quads can otherwise throw long miter spikes when turned.
       ctx.lineJoin = "round"
       ctx.lineCap = "round"
       ctx.miterLimit = 2
 
-      function oval(cx, cy, rx, ry) {
+      function ellipse(cx, cy, rx, ry) {
         ctx.save()
         ctx.translate(cx, cy)
         ctx.scale(Math.max(0.01, rx), Math.max(0.01, ry))
@@ -159,54 +159,70 @@ Item {
         ctx.restore()
       }
 
-      function roundedPolygon(points, radius) {
-        var out = []
-        var count = points.length
-        for (var i = 0; i < count; i++) {
-          var p = points[i]
-          var prev = points[(i + count - 1) % count]
-          var next = points[(i + 1) % count]
-          var ax = p[0] - prev[0]
-          var ay = p[1] - prev[1]
-          var al = Math.max(0.001, Math.hypot(ax, ay))
-          var bx = next[0] - p[0]
-          var by = next[1] - p[1]
-          var bl = Math.max(0.001, Math.hypot(bx, by))
-          var p1 = [p[0] - ax / al * radius, p[1] - ay / al * radius]
-          var p2 = [p[0] + bx / bl * radius, p[1] + by / bl * radius]
-          for (var t = 0; t <= 6; t++) {
-            var u = t / 6
-            var v = 1 - u
-            out.push([
-              v * v * p1[0] + 2 * v * u * p[0] + u * u * p2[0],
-              v * v * p1[1] + 2 * v * u * p[1] + u * u * p2[1]
+      function smoothLoop(points, iterations, weight) {
+        var out = points
+        for (var iteration = 0; iteration < iterations; iteration++) {
+          var next = []
+          for (var i = 0; i < out.length; i++) {
+            var a = out[(i + out.length - 1) % out.length]
+            var b = out[i]
+            var c = out[(i + 1) % out.length]
+            next.push([
+              weight * a[0] + (1 - 2 * weight) * b[0] + weight * c[0],
+              weight * a[1] + (1 - 2 * weight) * b[1] + weight * c[1]
             ])
           }
+          out = next
         }
         return out
+      }
+
+      function area(points) {
+        var total = 0
+        for (var i = 0; i < points.length; i++) {
+          var p = points[i]
+          var q = points[(i + 1) % points.length]
+          total += p[0] * q[1] - q[0] * p[1]
+        }
+        return total / 2
       }
 
       var w = width
       var h = height
       if (w <= 0 || h <= 0) return
-      var cx = w / 2
-      var cy = h / 2
-      var baseYaw = 0.0
 
-      // Traced from the supplied reference: a standard pointer with a
-      // vertical left edge, a narrow notch and a long diagonal tail.
-      var local = [
-        [0.0, 0.0],
-        [12.2, 11.0],
-        [6.6, 11.5],
-        [7.0, 12.4],
-        [9.1, 17.8],
-        [7.0, 18.8],
-        [4.0, 11.2],
-        [0.0, 17.0]
+      // 40-point contour traced from the reference, with one gentle smoothing
+      // pass. Coordinates keep the real 12 x 13.525 aspect ratio; the rounded
+      // ends come from the reference itself, not from cutting the corners.
+      var base = [
+        [1.322, 0.0], [1.9322, 0.0], [2.1356, 0.1017], [2.4407, 0.4068],
+        [2.8475, 0.6102], [3.5593, 1.2203], [3.9661, 1.4237],
+        [4.2712, 1.7288], [4.678, 1.9322], [5.3898, 2.5424],
+        [5.7966, 2.7458], [7.322, 3.9661], [8.0339, 4.3729],
+        [8.4407, 4.7797], [8.8475, 4.9831], [9.5593, 5.5932],
+        [9.9661, 5.7966], [10.2712, 6.1017], [10.3729, 6.1017],
+        [11.3898, 6.9153], [11.4915, 6.9153], [11.8983, 7.322],
+        [12.0, 7.5254], [12.0, 8.1356], [11.8983, 8.339],
+        [11.6949, 8.5424], [11.2881, 8.6441], [11.1864, 8.7458],
+        [10.7797, 8.7458], [10.678, 8.8475], [10.2712, 8.8475],
+        [10.1695, 8.9492], [9.7627, 8.9492], [9.661, 9.0508],
+        [8.6441, 9.1525], [8.5424, 9.2542], [7.5254, 9.3559],
+        [7.4237, 9.4576], [7.0169, 9.4576], [6.9153, 9.5593],
+        [6.5085, 9.5593], [6.4068, 9.661], [6.0, 9.661],
+        [5.8983, 9.7627], [5.6949, 9.7627], [5.1864, 10.2712],
+        [5.0847, 10.2712], [4.5763, 10.7797], [4.4746, 10.7797],
+        [3.9661, 11.2881], [3.8644, 11.2881], [3.3559, 11.7966],
+        [3.2542, 11.7966], [1.6271, 13.2203], [1.5254, 13.2203],
+        [1.1186, 13.5254], [0.6102, 13.5254], [0.4068, 13.4237],
+        [0.0, 13.0169], [0.0, 11.2881], [0.1017, 11.1864],
+        [0.1017, 9.661], [0.2034, 9.5593], [0.2034, 8.0339],
+        [0.3051, 7.9322], [0.3051, 6.4068], [0.4068, 6.3051],
+        [0.4068, 4.7797], [0.5085, 4.678], [0.5085, 3.1525],
+        [0.6102, 3.0508], [0.6102, 1.6271], [0.7119, 1.5254],
+        [0.7119, 0.6102], [0.8136, 0.4068], [1.1186, 0.1017],
+        [1.2203, 0.1017]
       ]
-      var points = roundedPolygon(local, 0.90)
-
+      var points = smoothLoop(base, 1, 0.25)
       var minX = points[0][0]
       var maxX = points[0][0]
       var minY = points[0][1]
@@ -217,21 +233,42 @@ Item {
         minY = Math.min(minY, points[q][1])
         maxY = Math.max(maxY, points[q][1])
       }
-      var spanX = Math.max(0.001, maxX - minX)
-      var spanY = Math.max(0.001, maxY - minY)
-      var fit = w * 0.90
-      var scale = Math.min(fit / spanX, fit / spanY)
-      var originX = (minX + maxX) / 2
-      var originY = (minY + maxY) / 2
+      var shapeW = Math.max(0.001, maxX - minX)
+      var shapeH = Math.max(0.001, maxY - minY)
+      var centerX = (minX + maxX) / 2
+      var centerY = (minY + maxY) / 2
+      var scale = Math.min((w * 0.92) / shapeW, (h * 0.92) / shapeH)
+      var cx = w / 2
+      var cy = h / 2
+      var halfDepth = w * 0.055
+      var focal = w * 4.2
 
-      var rad = baseYaw + cursor.angle * Math.PI / 180
-      var ca = Math.cos(rad)
-      var sa = Math.sin(rad)
-      var halfDepth = w * 0.07
-      var focal = w * 3.6
+      var top = [1.322, 0.0]
+      var notch = [5.6949, 9.7627]
+      var ax = notch[0] - top[0]
+      var ay = notch[1] - top[1]
+      var al = Math.max(0.001, Math.hypot(ax, ay))
+      var ux = ax / al
+      var uy = ay / al
+      var pivotX = (top[0] - centerX) * scale
+      var pivotY = (top[1] - centerY) * scale
+      var theta = cursor.angle * Math.PI / 180
+      var ct = Math.cos(theta)
+      var st = Math.sin(theta)
 
-      function rotateY(x, y, z) {
-        return [x * ca + z * sa, y, -x * sa + z * ca]
+      function rotate(v) {
+        var px = v[0] - pivotX
+        var py = v[1] - pivotY
+        var pz = v[2]
+        var dot = px * ux + py * uy
+        var crossX = uy * pz
+        var crossY = -ux * pz
+        var crossZ = ux * py - uy * px
+        return [
+          pivotX + px * ct + crossX * st + ux * dot * (1 - ct),
+          pivotY + py * ct + crossY * st + uy * dot * (1 - ct),
+          pz * ct + crossZ * st
+        ]
       }
 
       function project(v) {
@@ -243,36 +280,37 @@ Item {
         var v3 = []
         var v2 = []
         for (var i = 0; i < pts.length; i++) {
-          var x = (pts[i][0] - originX) * scale
-          var y = (pts[i][1] - originY) * scale
-          var v = rotateY(x, y, z)
+          var v = rotate([
+            (pts[i][0] - centerX) * scale,
+            (pts[i][1] - centerY) * scale,
+            z
+          ])
           v3.push(v)
           v2.push(project(v))
         }
         return { v3: v3, v2: v2 }
       }
 
-      var frontLayer = buildLayer(points, halfDepth)
-      var backLayer = buildLayer(points, -halfDepth)
+      var front = buildLayer(points, halfDepth)
+      var back = buildLayer(points, -halfDepth)
 
       if (cursor.shadow) {
-        var shadow = ctx.createRadialGradient(
+        var grad = ctx.createRadialGradient(
           cx, h * 0.84, 0, cx, h * 0.84, w * 0.40)
-        shadow.addColorStop(0, "rgba(0,0,0,0.34)")
-        shadow.addColorStop(1, "rgba(0,0,0,0)")
-        ctx.fillStyle = shadow
-        oval(cx, h * 0.84, w * 0.28, h * 0.08)
+        grad.addColorStop(0, "rgba(0,0,0,0.30)")
+        grad.addColorStop(1, "rgba(0,0,0,0)")
+        ctx.fillStyle = grad
+        ellipse(cx, h * 0.84, w * 0.27, h * 0.075)
         ctx.fill()
       }
 
       function averageZ(vertices) {
         var total = 0
-        for (var v = 0; v < vertices.length; v++)
-          total += vertices[v][2]
+        for (var v = 0; v < vertices.length; v++) total += vertices[v][2]
         return total / Math.max(1, vertices.length)
       }
 
-      function polyPath(vertices) {
+      function path(vertices) {
         ctx.beginPath()
         ctx.moveTo(vertices[0][0], vertices[0][1])
         for (var v = 1; v < vertices.length; v++)
@@ -281,60 +319,101 @@ Item {
       }
 
       var faces = []
-      faces.push({ kind: "front", pts: frontLayer.v2,
-                   z: averageZ(frontLayer.v3) })
-      faces.push({ kind: "back", pts: backLayer.v2,
-                   z: averageZ(backLayer.v3) })
+      faces.push({ kind: "front", pts: front.v2, v3: front.v3,
+                   z: averageZ(front.v3) })
+      faces.push({ kind: "back", pts: back.v2, v3: back.v3,
+                   z: averageZ(back.v3) })
       for (var e = 0; e < points.length; e++) {
         var n = (e + 1) % points.length
+        var sideV3 = [front.v3[e], front.v3[n], back.v3[n], back.v3[e]]
         faces.push({
           kind: "side",
-          pts: [frontLayer.v2[e], frontLayer.v2[n],
-                backLayer.v2[n], backLayer.v2[e]],
-          z: (frontLayer.v3[e][2] + frontLayer.v3[n][2]
-              + backLayer.v3[n][2] + backLayer.v3[e][2]) / 4
+          pts: [front.v2[e], front.v2[n], back.v2[n], back.v2[e]],
+          v3: sideV3,
+          z: (front.v3[e][2] + front.v3[n][2]
+              + back.v3[n][2] + back.v3[e][2]) / 4
         })
       }
 
-      var frontColor = Qt.lighter(cursor.color, 1.12)
-      var bevelColor = Qt.lighter(cursor.color, 1.06)
-      var sideColor = Qt.lighter(cursor.color, 1.02)
-      var backColor = cursor.color
-
-      // Seal every seam with the side colour first.
-      ctx.fillStyle = sideColor
-      ctx.strokeStyle = sideColor
-      ctx.lineWidth = Math.max(0.7, w * 0.008)
-      for (var u = 0; u < faces.length; u++) {
-        polyPath(faces[u].pts)
-        ctx.fill()
-        ctx.stroke()
+      var frontColor = Qt.lighter(cursor.color, 1.04)
+      var sideColor = Qt.darker(cursor.color, 1.16)
+      var backColor = Qt.darker(cursor.color, 1.08)
+      var edgeColor = Qt.darker(cursor.color, 2.5)
+      var edgeWidth = Math.max(0.7, w * 0.018)
+      // A face is visible when its outward normal points toward the camera.
+      // Projected winding is not enough here: a half turn around an in-plane
+      // axis also mirrors the silhouette.
+      function faceNormal(vs) {
+        var ax = vs[1][0] - vs[0][0]
+        var ay = vs[1][1] - vs[0][1]
+        var az = vs[1][2] - vs[0][2]
+        var bx = vs[2][0] - vs[0][0]
+        var by = vs[2][1] - vs[0][1]
+        var bz = vs[2][2] - vs[0][2]
+        var nx = ay * bz - az * by
+        var ny = az * bx - ax * bz
+        var nz = ax * by - ay * bx
+        var length = Math.hypot(nx, Math.hypot(ny, nz))
+        return [nx / Math.max(0.001, length), ny / Math.max(0.001, length),
+                nz / Math.max(0.001, length)]
       }
 
-      faces.sort(function(a, b) { return a.z - b.z })
-      for (var f = 0; f < faces.length; f++) {
-        var face = faces[f]
-        if (face.kind === "front") {
-          polyPath(face.pts)
-          ctx.fillStyle = frontColor
-          ctx.fill()
-          // A clipped inner stroke gives a clean bevel of equal width on all
-          // edges without any offset geometry that could spike when turned.
-          ctx.save()
-          polyPath(face.pts)
-          ctx.clip()
-          polyPath(face.pts)
-          ctx.strokeStyle = bevelColor
-          ctx.lineWidth = Math.max(1, w * 0.08)
+      function faceCenter(vs) {
+        var total = [0, 0, 0]
+        for (var k = 0; k < vs.length; k++) {
+          total[0] += vs[k][0]
+          total[1] += vs[k][1]
+          total[2] += vs[k][2]
+        }
+        return [total[0] / vs.length, total[1] / vs.length,
+                total[2] / vs.length]
+      }
+
+      // Seal tiny seams behind the sorted faces.
+      ctx.fillStyle = sideColor
+      for (var s = 0; s < faces.length; s++) {
+        path(faces[s].pts)
+        ctx.fill()
+      }
+
+      var visible = []
+      for (var v = 0; v < faces.length; v++) {
+        var face = faces[v]
+        if (Math.abs(area(face.pts)) < 0.15) continue
+        var normal = faceNormal(face.v3)
+        var center = faceCenter(face.v3)
+        if (normal[0] * center[0] + normal[1] * center[1]
+            + normal[2] * center[2] < 0) {
+          normal = [-normal[0], -normal[1], -normal[2]]
+        }
+        if (normal[2] <= 0.001) continue
+        visible.push(face)
+      }
+      visible.sort(function(a, b) { return a.z - b.z })
+      for (var f = 0; f < visible.length; f++) {
+        var item = visible[f]
+        path(item.pts)
+        ctx.fillStyle = item.kind === "front" ? frontColor
+          : (item.kind === "back" ? backColor : sideColor)
+        ctx.fill()
+        // Side walls are one continuous surface. Stroke only their front and
+        // back rims, not the narrow seams between neighbouring quads.
+        ctx.strokeStyle = edgeColor
+        ctx.lineWidth = edgeWidth
+        if (item.kind === "side") {
+          var a = item.pts[0]
+          var b = item.pts[1]
+          var c = item.pts[2]
+          var d = item.pts[3]
+          ctx.beginPath()
+          ctx.moveTo(a[0], a[1])
+          ctx.lineTo(b[0], b[1])
           ctx.stroke()
-          ctx.restore()
+          ctx.beginPath()
+          ctx.moveTo(d[0], d[1])
+          ctx.lineTo(c[0], c[1])
+          ctx.stroke()
         } else {
-          var fill = face.kind === "back" ? backColor : sideColor
-          polyPath(face.pts)
-          ctx.fillStyle = fill
-          ctx.strokeStyle = fill
-          ctx.lineWidth = Math.max(0.8, w * 0.010)
-          ctx.fill()
           ctx.stroke()
         }
       }
@@ -342,15 +421,14 @@ Item {
 
     Connections {
       target: cursor
-      function onAngleChanged() { arrowCanvas.requestPaint() }
-      function onColorChanged() { arrowCanvas.requestPaint() }
-      function onShadowChanged() { arrowCanvas.requestPaint() }
+      function onAngleChanged() { cursorCanvas.requestPaint() }
+      function onColorChanged() { cursorCanvas.requestPaint() }
+      function onShadowChanged() { cursorCanvas.requestPaint() }
     }
     onWidthChanged: requestPaint()
     onHeightChanged: requestPaint()
   }
 
-  // Horizontal air streams in front of the cursor while it spins fast.
   Canvas {
     id: airflow
     x: -cursor.airMargin

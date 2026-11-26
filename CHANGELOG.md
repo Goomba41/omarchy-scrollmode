@@ -82,6 +82,17 @@ All notable changes to this project are documented here. The format follows
 - Kept the existing motion: a slow idle turn, the opening glide, and the fast
   kick with air streaks.
 
+## [1.11.1] — 2026-11-26
+
+### Changed
+
+- Rebuilt the mouse cursor glyph from the supplied reference: a 40-point
+  contour with soft rounded ends, real 12 × 13.525 proportions and one gentle
+  smoothing pass. It turns around the line from the top corner to the notch.
+- The 3D slab now keeps its colour through the back view, culls faces by their
+  normals and strokes only the front/back side rims, so edge-on frames no
+  longer show a ladder of seams.
+
 ## [1.11.0] — 2026-11-26
 
 ### Added
