@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.7] — 2026-11-26
+
+### Changed
+
+- The cursor is now a single flat colour on every face. Gradients, side
+  shading and the bright rim are gone, so no plane can look pressed in and no
+  edge changes colour while turning.
+- The tail is centred under the top point and the vertical rotation axis runs
+  through both. The silhouette is now symmetric and the extrusion stays even.
+- Face seams are sealed with same-colour strokes over the depth-sorted faces.
+
 ## [1.10.6] — 2026-11-26
 
 ### Fixed

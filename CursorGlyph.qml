@@ -188,15 +188,17 @@ Item {
       var cx = w / 2
       var cy = h / 2
 
-      // Full pointer silhouette: tip, right wing, deep notch, chunky tail.
+      // Full pointer silhouette. The tail is centred under the tip, so the
+      // vertical rotation axis runs through both the top point and the tail
+      // centre instead of drifting between them.
       var local = [
-        [2.8, 1.6],
-        [18.6, 11.9],
-        [12.2, 12.6],
-        [15.8, 18.8],
-        [11.6, 20.2],
-        [8.8, 13.7],
-        [2.8, 17.6]
+        [9.0, 1.4],
+        [17.9, 11.9],
+        [12.4, 12.6],
+        [11.6, 20.0],
+        [6.4, 20.0],
+        [6.4, 13.2],
+        [1.2, 17.2]
       ]
       var points = roundedPolygon(local, 1.45)
 
@@ -210,11 +212,13 @@ Item {
         minY = Math.min(minY, points[q][1])
         maxY = Math.max(maxY, points[q][1])
       }
-      var spanX = Math.max(0.001, maxX - minX)
       var spanY = Math.max(0.001, maxY - minY)
-      var fit = w * 0.90
-      var scale = Math.min(fit / spanX, fit / spanY)
-      var originX = (minX + maxX) / 2
+      var axisX = 9.0
+      var leftSpan = Math.max(0.001, axisX - minX)
+      var rightSpan = Math.max(0.001, maxX - axisX)
+      var scale = Math.min(
+        (w * 0.43) / Math.max(leftSpan, rightSpan),
+        (h * 0.43) / (spanY / 2))
       var originY = (minY + maxY) / 2
 
       // True extrusion: the same outline at z = +t/2 and z = -t/2, rotated
@@ -240,7 +244,7 @@ Item {
       var front = []
       var back = []
       for (var i = 0; i < points.length; i++) {
-        var x = (points[i][0] - originX) * scale
+        var x = (points[i][0] - axisX) * scale
         var y = (points[i][1] - originY) * scale
         var f3 = rotateY(x, y, halfDepth)
         var b3 = rotateY(x, y, -halfDepth)
@@ -280,85 +284,24 @@ Item {
       faces.push({ kind: "back", pts: back, z: averageZ(back3) })
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
-        var dx = points[n][0] - points[e][0]
-        var dy = points[n][1] - points[e][1]
-        var len = Math.max(0.001, Math.hypot(dx, dy))
-        var nx = dy / len
-        var ny = -dx / len
         faces.push({
           kind: "side",
           pts: [front[e], front[n], back[n], back[e]],
-          z: (front3[e][2] + front3[n][2] + back3[n][2] + back3[e][2]) / 4,
-          light: Math.max(-1, Math.min(1, nx * -0.45 + ny * -0.89))
+          z: (front3[e][2] + front3[n][2] + back3[n][2] + back3[e][2]) / 4
         })
       }
 
-      // Opaque underlay of every face. It closes hairline seams between the
-      // sorted faces, so the body never shows the panel through a gap.
-      var underlay = Qt.darker(cursor.color, 1.55)
-      ctx.fillStyle = underlay
-      ctx.strokeStyle = underlay
-      ctx.lineWidth = Math.max(0.7, w * 0.008)
-      for (var u = 0; u < faces.length; u++) {
-        polyPath(faces[u].pts)
+      // The whole object is one flat colour. Faces are still drawn in depth
+      // order and stroked in the same colour so seams stay sealed, but no
+      // plane is lighter or darker than another.
+      faces.sort(function(a, b) { return a.z - b.z })
+      ctx.fillStyle = cursor.color
+      ctx.strokeStyle = cursor.color
+      ctx.lineWidth = Math.max(0.8, w * 0.010)
+      for (var f = 0; f < faces.length; f++) {
+        polyPath(faces[f].pts)
         ctx.fill()
         ctx.stroke()
-      }
-
-      // Painter order by average depth keeps the near faces on top, including
-      // the back face once the cursor has turned past edge-on.
-      faces.sort(function(a, b) { return a.z - b.z })
-
-      var sideBase = Qt.darker(cursor.color, 1.45)
-      var backBase = Qt.darker(cursor.color, 1.78)
-
-      for (var f = 0; f < faces.length; f++) {
-        var face = faces[f]
-        polyPath(face.pts)
-
-        if (face.kind === "front") {
-          var first = front[Math.floor(front.length * 0.10)]
-          var last = front[Math.floor(front.length * 0.62)]
-          var faceGrad = ctx.createLinearGradient(
-            first[0], first[1], last[0], last[1])
-          faceGrad.addColorStop(0, Qt.lighter(cursor.color, 1.40))
-          faceGrad.addColorStop(0.48, cursor.color)
-          faceGrad.addColorStop(1, Qt.darker(cursor.color, 1.42))
-          ctx.fillStyle = faceGrad
-          ctx.fill()
-          ctx.strokeStyle = Qt.lighter(cursor.color, 1.32)
-          ctx.lineWidth = Math.max(1, w * 0.016)
-          ctx.stroke()
-        } else if (face.kind === "back") {
-          var bfirst = back[Math.floor(back.length * 0.10)]
-          var blast = back[Math.floor(back.length * 0.62)]
-          var backGrad = ctx.createLinearGradient(
-            bfirst[0], bfirst[1], blast[0], blast[1])
-          backGrad.addColorStop(0, Qt.darker(cursor.color, 1.50))
-          backGrad.addColorStop(1, Qt.darker(cursor.color, 1.95))
-          ctx.fillStyle = backGrad
-          ctx.fill()
-          ctx.strokeStyle = Qt.lighter(backBase, 1.24)
-          ctx.lineWidth = Math.max(1, w * 0.012)
-          ctx.stroke()
-        } else {
-          var sideColor = face.light >= 0
-            ? Qt.lighter(sideBase, 1 + 0.20 * face.light)
-            : Qt.darker(sideBase, 1 + 0.20 * (-face.light))
-          var fmidX = (face.pts[0][0] + face.pts[1][0]) / 2
-          var fmidY = (face.pts[0][1] + face.pts[1][1]) / 2
-          var bmidX = (face.pts[2][0] + face.pts[3][0]) / 2
-          var bmidY = (face.pts[2][1] + face.pts[3][1]) / 2
-          var sideGrad = ctx.createLinearGradient(fmidX, fmidY, bmidX, bmidY)
-          sideGrad.addColorStop(0, Qt.lighter(sideColor, 1.18))
-          sideGrad.addColorStop(0.45, sideColor)
-          sideGrad.addColorStop(1, Qt.darker(sideColor, 1.28))
-          ctx.fillStyle = sideGrad
-          ctx.strokeStyle = sideColor
-          ctx.lineWidth = Math.max(0.7, w * 0.008)
-          ctx.fill()
-          ctx.stroke()
-        }
       }
     }
 
