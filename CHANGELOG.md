@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.8] — 2026-11-26
+
+### Changed
+
+- Returned to the ordinary system-pointer silhouette with smoothed corners:
+  tip, right wing, deep notch and offset tail. The forced symmetric pointer is
+  gone.
+- Faces now use slightly different, lighter flat fills: a lit front, a
+  slightly lifted side wall and the base colour at the rear. No gradients.
+- Increased the fixed viewing yaw and depth a little, so the volume reads at
+  rest while the silhouette stays even.
+
+### Notes
+
+- The cursor is now checked with an offscreen Qt render at many angles and
+  sizes before installing. The panel is not opened and the pointer is not
+  moved for visual checks.
+
 ## [1.10.7] — 2026-11-26
 
 ### Changed

@@ -188,19 +188,18 @@ Item {
       var cx = w / 2
       var cy = h / 2
 
-      // Full pointer silhouette. The tail is centred under the tip, so the
-      // vertical rotation axis runs through both the top point and the tail
-      // centre instead of drifting between them.
+      // The ordinary system pointer silhouette, with smoothed corners:
+      // tip, right wing, deep notch and the familiar offset tail.
       var local = [
-        [9.0, 1.4],
-        [17.9, 11.9],
-        [12.4, 12.6],
-        [11.6, 20.0],
-        [6.4, 20.0],
-        [6.4, 13.2],
-        [1.2, 17.2]
+        [2.8, 1.6],
+        [18.6, 11.9],
+        [12.2, 12.6],
+        [15.8, 18.8],
+        [11.6, 20.2],
+        [8.8, 13.7],
+        [2.8, 17.6]
       ]
-      var points = roundedPolygon(local, 1.45)
+      var points = roundedPolygon(local, 1.50)
 
       var minX = points[0][0]
       var maxX = points[0][0]
@@ -212,22 +211,20 @@ Item {
         minY = Math.min(minY, points[q][1])
         maxY = Math.max(maxY, points[q][1])
       }
+      var spanX = Math.max(0.001, maxX - minX)
       var spanY = Math.max(0.001, maxY - minY)
-      var axisX = 9.0
-      var leftSpan = Math.max(0.001, axisX - minX)
-      var rightSpan = Math.max(0.001, maxX - axisX)
-      var scale = Math.min(
-        (w * 0.43) / Math.max(leftSpan, rightSpan),
-        (h * 0.43) / (spanY / 2))
+      var fit = w * 0.90
+      var scale = Math.min(fit / spanX, fit / spanY)
+      var originX = (minX + maxX) / 2
       var originY = (minY + maxY) / 2
 
       // True extrusion: the same outline at z = +t/2 and z = -t/2, rotated
       // around Y, then projected once. No per-face shrinking or fake offsets,
       // so the silhouette stays even at every angle.
-      var rad = (cursor.angle + 12) * Math.PI / 180
+      var rad = (cursor.angle + 18) * Math.PI / 180
       var ca = Math.cos(rad)
       var sa = Math.sin(rad)
-      var halfDepth = w * 0.07
+      var halfDepth = w * 0.08
       var focal = w * 3.6
 
       function rotateY(x, y, z) {
@@ -244,7 +241,7 @@ Item {
       var front = []
       var back = []
       for (var i = 0; i < points.length; i++) {
-        var x = (points[i][0] - axisX) * scale
+        var x = (points[i][0] - originX) * scale
         var y = (points[i][1] - originY) * scale
         var f3 = rotateY(x, y, halfDepth)
         var b3 = rotateY(x, y, -halfDepth)
@@ -291,15 +288,32 @@ Item {
         })
       }
 
-      // The whole object is one flat colour. Faces are still drawn in depth
-      // order and stroked in the same colour so seams stay sealed, but no
-      // plane is lighter or darker than another.
+      // Flat, slightly different face colours: a lit front, the base colour
+      // on the side walls and a slightly darker rear. No gradients, so no
+      // plane can look pressed in and no edge changes tone while turning.
+      var frontColor = Qt.lighter(cursor.color, 1.12)
+      var sideColor = Qt.lighter(cursor.color, 1.05)
+      var backColor = cursor.color
+
+      // Seal the seams before sorting, using the side colour.
+      ctx.fillStyle = sideColor
+      ctx.strokeStyle = sideColor
+      ctx.lineWidth = Math.max(0.7, w * 0.008)
+      for (var u = 0; u < faces.length; u++) {
+        polyPath(faces[u].pts)
+        ctx.fill()
+        ctx.stroke()
+      }
+
       faces.sort(function(a, b) { return a.z - b.z })
-      ctx.fillStyle = cursor.color
-      ctx.strokeStyle = cursor.color
-      ctx.lineWidth = Math.max(0.8, w * 0.010)
       for (var f = 0; f < faces.length; f++) {
-        polyPath(faces[f].pts)
+        var face = faces[f]
+        var fill = face.kind === "front" ? frontColor
+          : (face.kind === "back" ? backColor : sideColor)
+        polyPath(face.pts)
+        ctx.fillStyle = fill
+        ctx.strokeStyle = fill
+        ctx.lineWidth = Math.max(0.8, w * 0.010)
         ctx.fill()
         ctx.stroke()
       }
