@@ -4,6 +4,21 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.2] — 2026-11-26
+
+### Changed
+
+- Mouse cursor air streams now run diagonally at 45°, matching the glyph's
+  diagonal axis instead of staying horizontal.
+- Every cursor face keeps the same fill. The dark rims carry the 3D read, so no
+  plane visibly changes colour as the glyph turns.
+
+### Known
+
+- The device picker popup can still leave a stale rectangle when the panel
+  shrinks after a device switch. This is a layer-surface repaint issue in
+  Quickshell, not a widget style problem, and needs a separate fix.
+
 ## [1.10.11] — 2026-11-26
 
 ### Changed

@@ -335,9 +335,11 @@ Item {
         })
       }
 
-      var frontColor = Qt.lighter(cursor.color, 1.04)
-      var sideColor = Qt.darker(cursor.color, 1.16)
-      var backColor = Qt.darker(cursor.color, 1.08)
+      // All faces keep the same fill: the plane colour must not change as the
+      // glyph turns. The dark rims carry the 3D read instead.
+      var frontColor = cursor.color
+      var sideColor = cursor.color
+      var backColor = cursor.color
       var edgeColor = Qt.darker(cursor.color, 2.5)
       var edgeWidth = Math.max(0.7, w * 0.018)
       // A face is visible when its outward normal points toward the camera.
@@ -448,11 +450,19 @@ Item {
       if (amount <= 0) return
       var phase = (cursor.angle * 0.16) % Math.max(4, cursor.size * 0.22)
       ctx.lineCap = "round"
+      // Streams follow the cursor's diagonal instead of running flat.
+      ctx.save()
+      ctx.translate(w / 2, h / 2)
+      ctx.rotate(Math.PI / 4)
+      ctx.translate(-w / 2, -h / 2)
+      var overscan = Math.hypot(w, h) * 0.35
       for (var i = 0; i < 3; i++) {
         var y = h * (0.53 + i * 0.10)
         var alpha = (0.10 + amount * 0.36) * (1 - i * 0.14)
         var start = -cursor.airMargin * 0.35 + (i % 2 ? -phase : phase)
+          - overscan
         var end = w + cursor.airMargin * 0.35 - (i % 2 ? phase : -phase)
+          + overscan
         var grad = ctx.createLinearGradient(start, y, end, y)
         grad.addColorStop(0, "rgba(255,255,255,0)")
         grad.addColorStop(0.14, "rgba(255,255,255," + alpha + ")")
@@ -466,6 +476,7 @@ Item {
         ctx.lineWidth = Math.max(1, cursor.size * (0.017 + amount * 0.022))
         ctx.stroke()
       }
+      ctx.restore()
     }
 
     onWidthChanged: requestPaint()
