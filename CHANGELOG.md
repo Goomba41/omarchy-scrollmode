@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.5] — 2026-11-26
+
+### Changed
+
+- Replaced the triangular cursor prism with a full mouse-pointer silhouette:
+  tip, right wing, notch and chunky tail, all rounded. The outline is
+  extruded into a solid 3D object with opaque side walls, a darker rear face
+  and a light beveled rim.
+- Kept the existing motion: a slow idle turn, the opening glide, and the fast
+  kick with air streaks.
+
 ## [1.10.4] — 2026-11-25
 
 ### Fixed

@@ -33,10 +33,11 @@ settings on a left click.
   receivers.
 - **Drawn device icons**: the trackball is a shaded sphere with a specular
   highlight and a fine texture, red for pointer, blue for scroll, amber for
-  sniper. A mouse gets a cursor-arrow badge that turns around its vertical
-  axis: slowly while idle, and with white air streams when kicked. Its prism
-  end face and bright rim stay readable as it turns through edge-on. Icons
-  open with a short glide and fill both the bar slot and the 44 px header.
+  sniper. A mouse gets a full 3D cursor arrow — tip, wing, notch and tail,
+  with rounded corners and opaque side walls — that turns around its vertical
+  axis: slowly while idle, and with white air streams when kicked. Its
+  beveled rim stays readable as it turns through edge-on. Icons open with a
+  short glide and fill both the bar slot and the 44 px header.
 - **Real settings UI**: speed, sniper speed, invert, axis lock, smooth
   scrolling, exit-on-click, inertia with trigger and coast controls, a learned
   sniper button, hold threshold, auto-exit, reset, open config.

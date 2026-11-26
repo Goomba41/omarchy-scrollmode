@@ -1,9 +1,11 @@
 import QtQuick
 import qs.Commons
 
-// A cursor-arrow badge for mouse devices. The arrow is a rounded, extruded
-// triangle that turns around its vertical axis: slowly while idle, fast with
-// air streaks on a click. Opening glides in and starts the idle turn.
+// A cursor-arrow badge for mouse devices. This is a full pointer silhouette
+// (tip, wing, notch and tail), not a triangle: the rounded outline is
+// extruded into a solid 3D slab that turns around its vertical axis. Idle
+// rotation is calm, a click kicks it fast with air streaks, and opening glides
+// the glyph into place.
 Item {
   id: cursor
 
@@ -143,6 +145,7 @@ Item {
     onPaint: {
       var ctx = getContext("2d")
       ctx.reset()
+
       function oval(cx, cy, rx, ry) {
         ctx.save()
         ctx.translate(cx, cy)
@@ -151,31 +154,7 @@ Item {
         ctx.arc(0, 0, 1, 0, Math.PI * 2)
         ctx.restore()
       }
-      function convexHull(points) {
-        if (points.length < 3) return points
-        var pts = points.slice().sort(function(a, b) {
-          return a[0] === b[0] ? a[1] - b[1] : a[0] - b[0]
-        })
-        function cross(o, a, b) {
-          return (a[0] - o[0]) * (b[1] - o[1])
-            - (a[1] - o[1]) * (b[0] - o[0])
-        }
-        var lower = []
-        for (var i = 0; i < pts.length; i++) {
-          while (lower.length >= 2 && cross(lower[lower.length - 2],
-            lower[lower.length - 1], pts[i]) <= 0) lower.pop()
-          lower.push(pts[i])
-        }
-        var upper = []
-        for (var j = pts.length - 1; j >= 0; j--) {
-          while (upper.length >= 2 && cross(upper[upper.length - 2],
-            upper[upper.length - 1], pts[j]) <= 0) upper.pop()
-          upper.push(pts[j])
-        }
-        lower.pop()
-        upper.pop()
-        return lower.concat(upper)
-      }
+
       function roundedPolygon(points, radius) {
         var out = []
         var n = points.length
@@ -209,47 +188,65 @@ Item {
       var cx = w / 2
       var cy = h / 2
 
-      // A massive rounded pointer triangle, with no thin stem.
-      var local = [[4.5, 3.0], [20.0, 14.4], [10.6, 21.0]]
-      var points = roundedPolygon(local, 2.0)
-      var scale = w * 0.82 / 18.5
-      var ox = cx - 12.25 * scale
-      var oy = cy - 12.0 * scale
+      // A complete pointer silhouette: a broad tip and wing, a deep notch,
+      // then a chunky tail. Everything is rounded, including the tail end.
+      var local = [
+        [2.8, 1.6],
+        [18.6, 11.9],
+        [12.2, 12.6],
+        [15.8, 18.8],
+        [11.6, 20.2],
+        [8.8, 13.7],
+        [2.8, 17.6]
+      ]
+      var points = roundedPolygon(local, 1.45)
+
+      var minX = points[0][0]
+      var maxX = points[0][0]
+      var minY = points[0][1]
+      var maxY = points[0][1]
+      for (var q = 1; q < points.length; q++) {
+        minX = Math.min(minX, points[q][0])
+        maxX = Math.max(maxX, points[q][0])
+        minY = Math.min(minY, points[q][1])
+        maxY = Math.max(maxY, points[q][1])
+      }
+      var spanX = Math.max(0.001, maxX - minX)
+      var spanY = Math.max(0.001, maxY - minY)
+      var fit = w * 0.90
+      var scale = Math.min(fit / spanX, fit / spanY)
+      var originX = (minX + maxX) / 2
+      var originY = (minY + maxY) / 2
+
+      // A small fixed camera yaw keeps the slab visibly thick even when the
+      // animated angle is 0; the rotation itself still runs through 360°.
       var rad = cursor.angle * Math.PI / 180
-      var ca = Math.cos(rad)
-      var sa = Math.sin(rad)
-      // A smooth perspective scale: no sign-clamp step at 90°. The extruded
-      // side faces keep the pointer visible while the front face is edge-on.
+      var yaw = rad + 0.31
+      var ca = Math.cos(yaw)
+      var sa = Math.sin(yaw)
       var sign = ca < 0 ? -1 : 1
-      var sx = sign * Math.pow(Math.abs(ca), 0.72)
-      var depth = Math.max(2.0, w * 0.11) * sa
-      // A true prism: the back face is a little smaller than the front, so
-      // the connecting side faces read as a solid, beveled end cap instead of
-      // a flat ribbon. Edge-on the cap stays visible between the two rims.
-      var backScale = 0.88 + 0.12 * Math.abs(ca)
+      var sx = sign * Math.pow(Math.abs(ca), 0.74)
+      var thickness = w * 0.18
+      var depth = thickness * sa
+      var backScale = 0.90 + 0.09 * Math.abs(ca)
+
+      function localPoint(p) {
+        return [(p[0] - originX) * scale, (p[1] - originY) * scale]
+      }
 
       function project(p) {
-        return [cx + (ox + p[0] * scale - cx) * sx, oy + p[1] * scale]
+        return [cx + p[0] * sx, cy + p[1]]
       }
 
       var front = []
       for (var i = 0; i < points.length; i++)
-        front.push(project(points[i]))
-
-      var bcx = 0
-      var bcy = 0
-      for (var c = 0; c < front.length; c++) {
-        bcx += front[c][0]
-        bcy += front[c][1]
-      }
-      bcx /= Math.max(1, front.length)
-      bcy /= Math.max(1, front.length)
+        front.push(project(localPoint(points[i])))
 
       var back = []
       for (var b = 0; b < front.length; b++) {
         back.push([
-          bcx + (front[b][0] - bcx) * backScale + depth,
-          bcy + (front[b][1] - bcy) * backScale
+          cx + (front[b][0] - cx) * backScale + depth,
+          cy + (front[b][1] - cy) * backScale
         ])
       }
 
@@ -263,34 +260,24 @@ Item {
         ctx.fill()
       }
 
-      // Fill the whole projected silhouette first. Any hairline between the
-      // front, back and side quads then shows the side colour, not the panel
-      // behind it, so the prism is always monolithic.
-      var hull = convexHull(front.concat(back))
-      if (hull.length >= 3) {
-        ctx.beginPath()
-        ctx.moveTo(hull[0][0], hull[0][1])
-        for (var h = 1; h < hull.length; h++)
-          ctx.lineTo(hull[h][0], hull[h][1])
-        ctx.closePath()
-        ctx.globalAlpha = 1
-        ctx.fillStyle = Qt.darker(cursor.color, 1.55)
-        ctx.fill()
-      }
-
-      // Back face and side extrusion.
+      // Rear face. Every surface is opaque, so the cursor reads as a solid
+      // object from any angle.
       ctx.beginPath()
       ctx.moveTo(back[0][0], back[0][1])
-      for (var b = 1; b < back.length; b++)
-        ctx.lineTo(back[b][0], back[b][1])
+      for (var b2 = 1; b2 < back.length; b2++)
+        ctx.lineTo(back[b2][0], back[b2][1])
       ctx.closePath()
-      ctx.fillStyle = Qt.darker(cursor.color, 2.05)
-      ctx.globalAlpha = 1
+      ctx.fillStyle = Qt.darker(cursor.color, 2.15)
       ctx.fill()
+      ctx.strokeStyle = Qt.darker(cursor.color, 2.15)
+      ctx.lineWidth = Math.max(0.8, w * 0.010)
+      ctx.stroke()
 
-      // Every face is opaque: the prism must read as one solid object, not a
-      // translucent ribbon with a see-through end.
-      ctx.fillStyle = Qt.darker(cursor.color, 1.72)
+      // Side walls: one quad per outline edge. The same-colour stroke seals
+      // the seam between the walls and the faces at small icon sizes.
+      ctx.fillStyle = Qt.darker(cursor.color, 1.70)
+      ctx.strokeStyle = Qt.darker(cursor.color, 1.70)
+      ctx.lineWidth = Math.max(0.8, w * 0.012)
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
         ctx.beginPath()
@@ -300,46 +287,38 @@ Item {
         ctx.lineTo(back[e][0], back[e][1])
         ctx.closePath()
         ctx.fill()
+        ctx.stroke()
       }
-      ctx.globalAlpha = 1
 
-      // A bright bevel on the far rim is the visible end face of the prism.
-      // It stays readable when the front face is exactly edge-on.
+      // A lighter far rim makes the extrusion read as a beveled end cap when
+      // the front face is close to edge-on.
       ctx.beginPath()
       ctx.moveTo(back[0][0], back[0][1])
       for (var bo = 1; bo < back.length; bo++)
         ctx.lineTo(back[bo][0], back[bo][1])
       ctx.closePath()
+      ctx.strokeStyle = Qt.lighter(cursor.color, 1.24)
       ctx.lineWidth = Math.max(1, w * 0.016)
-      ctx.globalAlpha = 1
-      ctx.strokeStyle = Qt.lighter(cursor.color, 1.22)
       ctx.stroke()
 
-      // Front face. The gradient is projected with the face, so it turns with
-      // the arrow instead of sitting in screen space.
-      var la = project([6.0, 5.0])
-      var lb = project([16.0, 18.0])
-      var face = ctx.createLinearGradient(la[0], la[1], lb[0], lb[1])
-      face.addColorStop(0, Qt.lighter(cursor.color, 1.36))
+      // Front face, with a projected gradient so the light turns with it.
+      var first = front[Math.floor(front.length * 0.10)]
+      var last = front[Math.floor(front.length * 0.62)]
+      var face = ctx.createLinearGradient(first[0], first[1], last[0], last[1])
+      face.addColorStop(0, Qt.lighter(cursor.color, 1.38))
       face.addColorStop(0.48, cursor.color)
-      face.addColorStop(1, Qt.darker(cursor.color, 1.40))
+      face.addColorStop(1, Qt.darker(cursor.color, 1.42))
       ctx.beginPath()
       ctx.moveTo(front[0][0], front[0][1])
-      for (var j = 1; j < front.length; j++)
-        ctx.lineTo(front[j][0], front[j][1])
+      for (var f = 1; f < front.length; f++)
+        ctx.lineTo(front[f][0], front[f][1])
       ctx.closePath()
       ctx.fillStyle = face
       ctx.fill()
 
-      // A light leading edge is always present, so a profile view still reads.
-      ctx.beginPath()
-      ctx.moveTo(front[0][0], front[0][1])
-      for (var m = 1; m < front.length; m++)
-        ctx.lineTo(front[m][0], front[m][1])
-      ctx.closePath()
-      ctx.lineWidth = Math.max(1, w * 0.016)
-      ctx.globalAlpha = 1
-      ctx.strokeStyle = Qt.lighter(cursor.color, 1.35)
+      // Rounded leading rim. This is opaque, not a translucent specular pass.
+      ctx.strokeStyle = Qt.lighter(cursor.color, 1.34)
+      ctx.lineWidth = Math.max(1, w * 0.018)
       ctx.stroke()
     }
 
@@ -353,7 +332,7 @@ Item {
     onHeightChanged: requestPaint()
   }
 
-  // Horizontal air streams in front of the arrow while it is spinning fast.
+  // Horizontal air streams in front of the cursor while it spins fast.
   Canvas {
     id: airflow
     x: -cursor.airMargin
