@@ -8,8 +8,9 @@ Usage:
   omarchy-scrollmode status      print the current mode
   omarchy-scrollmode battery     print the mouse battery
   omarchy-scrollmode dpi         print the DPI view and provider
-  omarchy-scrollmode dpi set <n> set a manual DPI for the active mouse
-  omarchy-scrollmode dpi clear   remove the manual DPI override
+  omarchy-scrollmode dpi apply <n>  write DPI through libratbag
+  omarchy-scrollmode dpi set <n>    set a manual DPI for statistics
+  omarchy-scrollmode dpi clear      remove the manual DPI override
   omarchy-scrollmode reload      reload ~/.config/omarchy/scrollmode.json
   omarchy-scrollmode devices     list pointing devices
   omarchy-scrollmode use <id>    make a device the active one
@@ -421,11 +422,16 @@ def show_dpi() -> int:
     stages = status.get("dpiStages") if isinstance(status.get("dpiStages"), list) else []
     current = int(status.get("dpi") or 0)
     device = str(status.get("dpiDevice") or "")
+    writable = bool(status.get("dpiWritable", False))
     if source == "none" or not stages:
         print("DPI: not exposed")
     else:
         suffix = f" · {device}" if device else ""
-        print(f"DPI: {current} ({source}{suffix})" if current > 0 else f"DPI: unknown ({source}{suffix})")
+        access = "writable" if writable else "read-only"
+        print(
+            f"DPI: {current} ({source}, {access}{suffix})" if current > 0
+            else f"DPI: unknown ({source}, {access}{suffix})"
+        )
         parts = []
         for stage in stages:
             try:
@@ -579,6 +585,13 @@ def main(argv: list[str]) -> int:
             return set_manual_dpi(argv[2])
         if action == "clear":
             return set_manual_dpi("", clear=True)
+        if action == "apply":
+            if len(argv) < 3:
+                print(f"{APP}: usage: {APP} dpi apply <50..64000>", file=sys.stderr)
+                return 2
+            reply = send(f"dpi apply {argv[2]}")
+            print(reply)
+            return 0 if reply.startswith("ok") else 1
         return show_dpi()
 
     if command == "learn":

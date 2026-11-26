@@ -52,7 +52,8 @@ settings on a left click.
 - **DPI on mice**: the Device tab shows every DPI stage the mouse exposes, the
   current stage, its source and range. Values come from libratbag when it
   supports the mouse, from a vendor HID report where one is known (Wings), or
-  from a manual override. Colours are derived from the DPI number alone, so the
+  from a manual override. With libratbag the stage chips are also writable,
+  with a readback check. Colours are derived from the DPI number alone, so the
   same DPI always looks the same on every mouse.
 - **English and Russian**, following the Omarchy language setting.
 
@@ -291,8 +292,9 @@ Providers are tried in this order:
 
 1. **libratbag / ratbagd** through `ratbagctl`. This is the broadest path; the
    daemon matches the device by name or the `dpi.ratbag_device` override. It is
-   optional and never starts or writes to ratbagd on its own. If the package is
-   installed but the service is stopped, the panel offers **Start libratbag**.
+   optional and never starts ratbagd on its own; it writes only when you apply
+   a stage. If the package is installed but the service is stopped, the panel
+   offers **Start libratbag**.
 2. **Vendor HID report.** The Wings Tech Gaming Mouse reports its current DPI
    stage as `04 a2 02 <stage> 00 <code> <code>` when its DPI button is pressed.
    Known stages are `900/1800/2700/5400/7200/14000/21000`. The stage is cached
@@ -305,10 +307,17 @@ Providers are tried in this order:
 4. **None.** The section says that the mouse does not expose DPI and movement
    remains in raw counts until a manual value is set.
 
-Trackballs never show this section. This release only reads DPI; changing it
-on mice that do expose stages is a later step. When the section says the DPI
-is not exposed, it offers **Install libratbag**, **Start libratbag** or
-**Open Piper** / **Install Piper** depending on what is already on the system.
+When libratbag controls the mouse, the stage chips are writable. Focus the
+grid with the keyboard, move the preview with `h`/`l` and press `Enter` to
+apply, or click a chip. `omarchy-scrollmode dpi apply 1600` does the same from
+the CLI. The daemon writes the value, reads it back and reports an error if the
+device refused or returned a different DPI. Vendor reports and manual values
+stay read-only: they either expose only the current stage or exist for
+statistics.
+
+Trackballs never show this section. When the section says the DPI is not
+exposed, it offers **Install libratbag**, **Start libratbag** or **Open Piper**
+/ **Install Piper** depending on what is already on the system.
 
 ### Stats
 
@@ -475,9 +484,10 @@ omarchy-scrollmode hotkey   # rewrite the Hyprland bindings
 ```sh
 omarchy-scrollmode toggle        # pointer <-> scroll
 omarchy-scrollmode battery       # print the mouse battery
-omarchy-scrollmode dpi           # print the DPI view, stages and provider
-omarchy-scrollmode dpi set <n>   # manual DPI for the active mouse
-omarchy-scrollmode dpi clear     # remove the manual DPI override
+omarchy-scrollmode dpi            # print the DPI view, stages and provider
+omarchy-scrollmode dpi apply <n>  # write DPI through libratbag
+omarchy-scrollmode dpi set <n>    # manual DPI for statistics
+omarchy-scrollmode dpi clear      # remove the manual DPI override
 omarchy-scrollmode sniper        # scroll <-> sniper (no-op in pointer)
 omarchy-scrollmode on | off      # force scroll or pointer
 omarchy-scrollmode status        # print the current mode
@@ -632,8 +642,8 @@ slate.
   model; unknown mice without a vendor parser stay counts-only until a manual
   DPI is set in the Device tab or with `dpi set`. Vendor tables currently cover
   the Wings Tech Gaming Mouse.
-- This release reads DPI only. Writing a new DPI stage from the panel is
-  planned for the next iteration.
+- Writing DPI needs libratbag and a mouse it controls. Vendor-report mice such
+  as Wings stay read-only because their write protocol is not known.
 
 ## Roadmap
 

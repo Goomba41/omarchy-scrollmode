@@ -82,6 +82,26 @@ All notable changes to this project are documented here. The format follows
 - Kept the existing motion: a slow idle turn, the opening glide, and the fast
   kick with air streaks.
 
+## [1.11.0] — 2026-11-26
+
+### Added
+
+- **DPI writing through libratbag.** When ratbag controls the mouse, the stage
+  chips are interactive: `h`/`l` move a preview, `Enter` applies it, and a
+  click applies the clicked stage. The daemon runs `ratbagctl ... dpi set`,
+  reads the value back and updates the panel. `omarchy-scrollmode dpi apply
+  <n>` exposes the same operation from the CLI.
+- Transient “Applying…” and write-error messages in the DPI section. The
+  active chip stays on the last confirmed DPI if a write fails.
+- `dpi` output now reports whether the source is writable or read-only.
+
+### Changed
+
+- The DPI grid is a keyboard focus target only when the source can be written.
+  Vendor and manual DPI stay read-only.
+- The section no longer offers to install Piper for a working ratbag device;
+  **Open Piper** appears only when Piper is already present.
+
 ## [1.10.4] — 2026-11-25
 
 ### Fixed

@@ -236,7 +236,22 @@ Ui.Panel {
   readonly property int dpiCurrent: (status && status.dpi) ? Number(status.dpi) : 0
   readonly property string dpiSource: (status && status.dpiSource)
     ? String(status.dpiSource) : "none"
+  readonly property bool dpiWritable: !!(status && status.dpiWritable === true)
   readonly property bool dpiVisible: root.tab === 2 && root.deviceKind === "mouse"
+  readonly property bool dpiInteractive: root.dpiWritable
+    && root.dpiSource === "ratbag" && root.dpiStages.length > 0
+  readonly property int dpiActiveIndex: {
+    for (var i = 0; i < root.dpiStages.length; i++)
+      if (root.dpiStages[i].active === true) return i
+    return -1
+  }
+  property int dpiPreviewIndex: -1
+  readonly property int dpiPreviewValue: (root.dpiPreviewIndex >= 0
+    && root.dpiPreviewIndex < root.dpiStages.length)
+    ? Number(root.dpiStages[root.dpiPreviewIndex].dpi || 0) : 0
+  property bool dpiBusy: false
+  property int dpiPendingValue: 0
+  property string dpiError: ""
   readonly property bool darkTheme: Color.popups.background.hslLightness < 0.5
   property real dpiGridWidth: 0
   readonly property int dpiColumns: {
@@ -253,8 +268,7 @@ Ui.Panel {
   }
   readonly property string dpiToolAction: {
     if (!root.dpiVisible) return ""
-    if (root.dpiSource === "ratbag")
-      return root.dpiPiper ? "openPiper" : "installPiper"
+    if (root.dpiSource === "ratbag") return root.dpiPiper ? "openPiper" : ""
     if (root.dpiSource !== "none") return ""
     if (!root.dpiRatbag) return "installLibratbag"
     if (root.dpiToolsInfo.daemon !== true) return "startRatbag"
@@ -281,6 +295,60 @@ Ui.Panel {
 
   function dpiText(dpiValue) {
     return root.fmtNumber(Number(dpiValue), 0) + " " + strings.t("dpi.unit")
+  }
+
+  function moveDpiPreview(delta) {
+    if (!root.dpiInteractive || root.dpiStages.length === 0) return
+    var index = root.dpiPreviewIndex
+    if (index < 0 || index >= root.dpiStages.length) index = root.dpiActiveIndex
+    if (index < 0) index = 0
+    root.dpiPreviewIndex = (index + delta + root.dpiStages.length)
+      % root.dpiStages.length
+  }
+
+  function applyDpi(value) {
+    if (!root.dpiInteractive || root.dpiBusy) return
+    var target = Math.round(Number(value))
+    if (!(target > 0)) return
+    root.dpiError = ""
+    root.dpiPendingValue = target
+    root.dpiBusy = true
+    dpiApplyProcess.command = [root.cli, "dpi", "apply", String(target)]
+    dpiApplyProcess.running = true
+  }
+
+  function handleDpiApplyResult(text) {
+    var message = String(text || "").trim()
+    root.dpiBusy = false
+    if (message.indexOf("ok") === 0) {
+      var parts = message.split(/\s+/)
+      var actual = Number(parts[1] || 0)
+      if (actual > 0) {
+        for (var i = 0; i < root.dpiStages.length; i++) {
+          if (Number(root.dpiStages[i].dpi || 0) === actual) {
+            root.dpiPreviewIndex = i
+            break
+          }
+        }
+      }
+      root.dpiError = ""
+      statusFile.reload()
+    } else {
+      root.dpiError = message.replace(/^error:\s*/, "")
+        || strings.t("dpi.applyFailed")
+    }
+  }
+
+  onDpiActiveIndexChanged: root.dpiPreviewIndex = root.dpiActiveIndex
+  onDpiSourceChanged: {
+    root.dpiError = ""
+    root.dpiBusy = false
+  }
+  onDpiStagesChanged: {
+    if (root.dpiStages.length === 0) root.dpiPreviewIndex = -1
+    else if (root.dpiPreviewIndex < 0
+        || root.dpiPreviewIndex >= root.dpiStages.length)
+      root.dpiPreviewIndex = root.dpiActiveIndex >= 0 ? root.dpiActiveIndex : 0
   }
 
   function setManualDpi(value) {
@@ -672,6 +740,7 @@ Ui.Panel {
       rows.push("autoExitHelp")
     } else if (root.tab === 2) {
       rows = ["device", "useDevice", "rescan"]
+      if (root.dpiInteractive) rows.push("dpiStages")
       if (root.dpiVisible && (root.dpiSource === "none"
           || root.dpiSource === "manual")) {
         rows.push("dpiManual")
@@ -790,6 +859,7 @@ Ui.Panel {
     if (id === "device") return devicePicker
     if (id === "useDevice") return useButton
     if (id === "rescan") return refreshButton
+    if (id === "dpiStages") return dpiGrid
     if (id === "dpiManual") return manualDpiSlider
     if (id === "dpiManualHelp") return manualDpiSlider.helpIcon
     if (id === "dpiClear") return dpiClearButton
@@ -853,6 +923,7 @@ Ui.Panel {
     else if (id === "holdThreshold") root.nudgeSlider(holdSlider, delta)
     else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], delta)
     else if (id === "device") root.cyclePending(delta)
+    else if (id === "dpiStages") root.moveDpiPreview(delta)
     else if (id === "dpiManual") root.nudgeSlider(manualDpiSlider, delta)
     else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
     else if (id === "batteryLow") root.nudgeSlider(batteryLowSlider, delta)
@@ -881,6 +952,7 @@ Ui.Panel {
     else if (id === "device") devicePicker.open()
     else if (id === "useDevice") root.applyPendingDevice()
     else if (id === "rescan") root.rescan()
+    else if (id === "dpiStages") root.applyDpi(root.dpiPreviewValue)
     else if (id === "dpiManual") manualDpiSlider.flash = true
     else if (id === "dpiClear") root.clearManualDpi()
     else if (id === "dpiTool") root.runDpiTool()
@@ -1010,6 +1082,21 @@ Ui.Panel {
     // Keep the dropdown from claiming that an older device is still pending.
     if (root.activeId !== "") root.pendingId = root.activeId
     Qt.callLater(root.ensureTab)
+  }
+
+  Process {
+    id: dpiApplyProcess
+    running: false
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: root.handleDpiApplyResult(String(text))
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (root.dpiBusy && exitCode !== 0) {
+        root.dpiBusy = false
+        if (root.dpiError === "") root.dpiError = strings.t("dpi.applyFailed")
+      }
+    }
   }
 
   Process {
@@ -1543,16 +1630,24 @@ Ui.Panel {
                   required property var modelData
 
                   readonly property int chipDpi: Number(modelData.dpi || 0)
+                  readonly property int chipIndex: Number(modelData.index || 0)
                   readonly property bool active: modelData.active === true
+                  readonly property bool preview: root.dpiInteractive
+                    && root.dpiPreviewIndex === chipIndex
+                  readonly property bool pending: root.dpiBusy
+                    && root.dpiPendingValue === chipDpi
                   readonly property color tone: DpiColor.colorFor(
                     chipDpi, 1, root.darkTheme)
 
                   width: dpiGrid.cellWidth
                   height: Style.spacing.controlHeight - Style.space(8)
                   radius: Style.space(4)
-                  color: Qt.rgba(tone.r, tone.g, tone.b, active ? 0.30 : 0.09)
-                  border.width: 1
-                  border.color: Qt.rgba(tone.r, tone.g, tone.b, active ? 0.95 : 0.42)
+                  color: Qt.rgba(tone.r, tone.g, tone.b,
+                    active ? 0.30 : (preview ? 0.18 : 0.09))
+                  border.width: (active || preview) ? 2 : 1
+                  border.color: Qt.rgba(tone.r, tone.g, tone.b,
+                    preview ? 1.0 : (active ? 0.95 : 0.42))
+                  opacity: pending ? 0.55 : 1
 
                   Row {
                     id: dpiChipRow
@@ -1574,10 +1669,10 @@ Ui.Panel {
                       text: root.dpiShort(dpiChip.chipDpi)
                       textFormat: Text.PlainText
                       color: Color.popups.text
-                      opacity: dpiChip.active ? 1 : 0.82
+                      opacity: (dpiChip.active || dpiChip.preview) ? 1 : 0.82
                       font.family: Style.font.family
                       font.pixelSize: Style.font.body
-                      font.bold: dpiChip.active
+                      font.bold: dpiChip.active || dpiChip.preview
                       elide: Text.ElideRight
                     }
                   }
@@ -1587,7 +1682,17 @@ Ui.Panel {
                     anchors.fill: parent
                     hoverEnabled: true
                     acceptedButtons: Qt.LeftButton
-                    onClicked: {}
+                    cursorShape: root.dpiInteractive
+                      ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onContainsMouseChanged: {
+                      if (containsMouse && root.dpiInteractive) {
+                        root.dpiPreviewIndex = dpiChip.chipIndex
+                        root.setCursor("dpiStages")
+                      }
+                    }
+                    onClicked: {
+                      if (root.dpiInteractive) root.applyDpi(dpiChip.chipDpi)
+                    }
                   }
 
                   Ui.PanelToolTip {
@@ -1598,6 +1703,28 @@ Ui.Panel {
                   }
                 }
               }
+            }
+
+            Text {
+              visible: root.dpiBusy
+              width: parent.width
+              text: strings.t("dpi.applying")
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              opacity: 0.6
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            Text {
+              visible: !root.dpiBusy && root.dpiError !== ""
+              width: parent.width
+              text: root.dpiError
+              textFormat: Text.PlainText
+              color: root.armedColor
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+              wrapMode: Text.WordWrap
             }
 
             Text {

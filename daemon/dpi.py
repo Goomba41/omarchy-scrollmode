@@ -336,7 +336,55 @@ def read_ratbag(
     if not parsed:
         return None, True
     parsed["device"] = device["name"]
+    parsed["id"] = device["id"]
     return parsed, True
+
+
+def parse_ratbagctl_dpi_output(text: str) -> int:
+    match = re.search(r"(\d+)", text or "")
+    return int(match.group(1)) if match else 0
+
+
+def write_ratbag(info: dict, value: int, timeout: float = 2.0,
+                 service_active=None) -> tuple[bool, int | str]:
+    """Set DPI on the matched ratbag device and read it back."""
+    tool = shutil.which("ratbagctl")
+    if not tool:
+        return False, "ratbagctl is missing"
+    device_id = str(info.get("id") or "")
+    if not device_id:
+        return False, "no matched ratbag device"
+    check = service_active or ratbag_service_active
+    if not check():
+        return False, "ratbagd is not running"
+    try:
+        result = subprocess.run(
+            [tool, device_id, "dpi", "set", str(int(value))],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"cannot run ratbagctl: {exc}"
+    if result.returncode != 0:
+        message = (result.stderr or result.stdout).strip()
+        return False, message or f"ratbagctl exited {result.returncode}"
+    try:
+        readback = subprocess.run(
+            [tool, device_id, "dpi", "get"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"cannot read the new DPI: {exc}"
+    if readback.returncode != 0:
+        message = (readback.stderr or readback.stdout).strip()
+        return False, message or "ratbagctl did not confirm the new DPI"
+    actual = parse_ratbagctl_dpi_output(readback.stdout)
+    if actual <= 0:
+        return False, "ratbagctl returned no DPI"
+    return True, actual
 
 
 class DpiManager:
@@ -347,12 +395,14 @@ class DpiManager:
         state_path: str,
         config: dict,
         ratbag_reader=None,
+        ratbag_writer=None,
         which=None,
         logger=None,
     ) -> None:
         self.state_path = state_path
         self.config = config or {}
         self._reader = ratbag_reader or read_ratbag
+        self._writer = ratbag_writer or write_ratbag
         self._which = which or shutil.which
         self._log = logger or (lambda _message: None)
         self._lock = threading.RLock()
@@ -472,7 +522,7 @@ class DpiManager:
                         info["stages"],
                         info.get("active"),
                         "ratbag",
-                        False,
+                        True,
                         tools,
                         str(info.get("device") or ""),
                     )
@@ -493,6 +543,82 @@ class DpiManager:
             if manual:
                 return manual
             return none_info(tools)
+
+    def apply_dpi(
+        self,
+        device_id: str,
+        name: str,
+        raw_name: str,
+        value: int,
+        timeout: float = 2.0,
+    ) -> tuple[bool, str, dict | None]:
+        """Write DPI through ratbag, verify it, and refresh the cached view."""
+        try:
+            target = int(value)
+        except (TypeError, ValueError):
+            return False, "invalid DPI value", None
+        if target < 50 or target > 64000:
+            return False, "DPI must be between 50 and 64000", None
+
+        with self._lock:
+            self._tools.update(self._detect_tools())
+            tools = dict(self._tools)
+            if not tools["ratbag"]:
+                return False, "libratbag is not installed", None
+
+            cached = self._ratbag_cache.get(device_id)
+            info = cached.get("info") if cached else None
+            if not info or not info.get("id") or (
+                time.monotonic() - cached["at"] > 30.0
+            ):
+                override = ""
+                section = self.config.get("dpi")
+                if isinstance(section, dict):
+                    override = str(section.get("ratbag_device") or "")
+                try:
+                    info, daemon_ok = self._reader([name, raw_name], override)
+                except Exception as exc:
+                    self._log(f"ratbag DPI refresh failed: {exc}")
+                    info, daemon_ok = None, False
+                self._tools["daemon"] = bool(daemon_ok)
+                tools["daemon"] = bool(daemon_ok)
+                cached = {"at": time.monotonic(), "info": info}
+                self._ratbag_cache[device_id] = cached
+
+            if not info or not info.get("id"):
+                return False, "libratbag does not control this mouse", None
+            try:
+                ok, result = self._writer(info, target)
+            except Exception as exc:
+                self._log(f"ratbag DPI write failed: {exc}")
+                return False, f"ratbag write failed: {exc}", None
+            if not ok:
+                return False, str(result), None
+
+            try:
+                actual = int(result)
+            except (TypeError, ValueError):
+                return False, "ratbag returned an invalid DPI", None
+            stages = list(info.get("stages") or [])
+            if actual not in stages:
+                stages.append(actual)
+                stages.sort()
+            updated = dict(info)
+            updated["stages"] = stages
+            updated["active"] = stages.index(actual)
+            self._ratbag_cache[device_id] = {
+                "at": time.monotonic(),
+                "info": updated,
+            }
+            view = build_info(
+                stages,
+                updated["active"],
+                "ratbag",
+                True,
+                tools,
+                str(updated.get("device") or ""),
+            )
+            return True, str(actual), view
 
 
 # -- vendor HID monitor ----------------------------------------------------

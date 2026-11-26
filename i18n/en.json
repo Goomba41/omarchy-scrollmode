@@ -170,5 +170,7 @@
   "dpi.manual": "Manual DPI",
   "dpi.clearManual": "Clear manual DPI",
   "help.dpiManual": "Distance statistics only. It does not change the DPI stored on the mouse.",
-  "dpi.manualStatsOnly": "Only affects usage statistics — the mouse DPI is not changed."
+  "dpi.manualStatsOnly": "Only affects usage statistics — the mouse DPI is not changed.",
+  "dpi.applying": "Applying…",
+  "dpi.applyFailed": "Could not apply DPI."
 }

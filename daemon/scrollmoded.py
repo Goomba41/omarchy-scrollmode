@@ -1223,6 +1223,8 @@ class Daemon:
         self.dpi_force = False
         self.last_dpi_at = 0.0
         self.last_dpi_id = ""
+        self.active_name = ""
+        self.active_raw = ""
 
         self.mode = "pointer"
         self.dev: evdev.InputDevice | None = None
@@ -1452,6 +1454,28 @@ class Daemon:
         )
         self.dpi_monitor.set_target(self.active_id, name, raw_name)
 
+    def apply_dpi(self, raw: str) -> str:
+        try:
+            value = int(float(raw))
+        except (TypeError, ValueError):
+            return "error: invalid DPI value"
+        if not self.active_id or self.device_kind != "mouse":
+            return "error: DPI is only available for mice"
+        ok, result, info = self.dpi_manager.apply_dpi(
+            self.active_id, self.active_name, self.active_raw, value
+        )
+        if not ok:
+            log(f"DPI apply failed: {result}")
+            return f"error: {result}"
+        if info:
+            self.dpi_info = info
+        self.last_dpi_at = time.monotonic()
+        self.last_scan = 0.0
+        self.dpi_force = False
+        log(f"DPI set to {result}")
+        self.refresh_status(force=True)
+        return f"ok {result}"
+
     def refresh_status(self, force: bool = False) -> None:
         # Enumerating every /dev/input node costs a few hundred milliseconds on
         # a normal machine. That is invisible in pointer mode (the device is not
@@ -1541,6 +1565,8 @@ class Daemon:
                 active_wireless = wireless
                 active_connection = connection
 
+        self.active_name = active_name
+        self.active_raw = active_raw
         self.device_kind = active_kind or "unknown"
         self.supports_scroll = self.device_kind in ("trackball", "unknown")
         self.supports_stats = self.device_kind in ("trackball", "mouse")
@@ -2316,6 +2342,10 @@ class Daemon:
             self.rescan_requested = True
             self.dpi_force = True
             return self.mode
+        if verb == "dpi":
+            if arg == "apply" and len(parts) >= 3:
+                return self.apply_dpi(parts[2])
+            return "error: usage: dpi apply <value>"
         if verb == "learn":
             if arg == "cancel":
                 self.stop_learn()
