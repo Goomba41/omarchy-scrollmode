@@ -4,6 +4,19 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.6] — 2026-11-26
+
+### Fixed
+
+- Rebuilt the cursor as a true uniform extrusion: the same rounded outline at
+  `+depth` and `-depth`, one perspective projection, and no per-face scaling
+  or fake offsets. This removes the crooked perspective and uneven silhouette.
+- Added an opaque underlay of every face and gradient-shaded side walls, so
+  the ends and rear face can no longer read as transparent or show the panel
+  through a seam.
+- Reduced thickness and the fixed viewing yaw, and lightened the rear/side
+  colours, so the body stays solid and even while it turns.
+
 ## [1.10.5] — 2026-11-26
 
 ### Changed

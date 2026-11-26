@@ -157,11 +157,11 @@ Item {
 
       function roundedPolygon(points, radius) {
         var out = []
-        var n = points.length
-        for (var i = 0; i < n; i++) {
+        var count = points.length
+        for (var i = 0; i < count; i++) {
           var p = points[i]
-          var prev = points[(i + n - 1) % n]
-          var next = points[(i + 1) % n]
+          var prev = points[(i + count - 1) % count]
+          var next = points[(i + 1) % count]
           var ax = p[0] - prev[0]
           var ay = p[1] - prev[1]
           var al = Math.max(0.001, Math.hypot(ax, ay))
@@ -188,8 +188,7 @@ Item {
       var cx = w / 2
       var cy = h / 2
 
-      // A complete pointer silhouette: a broad tip and wing, a deep notch,
-      // then a chunky tail. Everything is rounded, including the tail end.
+      // Full pointer silhouette: tip, right wing, deep notch, chunky tail.
       var local = [
         [2.8, 1.6],
         [18.6, 11.9],
@@ -218,36 +217,37 @@ Item {
       var originX = (minX + maxX) / 2
       var originY = (minY + maxY) / 2
 
-      // A small fixed camera yaw keeps the slab visibly thick even when the
-      // animated angle is 0; the rotation itself still runs through 360°.
-      var rad = cursor.angle * Math.PI / 180
-      var yaw = rad + 0.31
-      var ca = Math.cos(yaw)
-      var sa = Math.sin(yaw)
-      var sign = ca < 0 ? -1 : 1
-      var sx = sign * Math.pow(Math.abs(ca), 0.74)
-      var thickness = w * 0.18
-      var depth = thickness * sa
-      var backScale = 0.90 + 0.09 * Math.abs(ca)
+      // True extrusion: the same outline at z = +t/2 and z = -t/2, rotated
+      // around Y, then projected once. No per-face shrinking or fake offsets,
+      // so the silhouette stays even at every angle.
+      var rad = (cursor.angle + 12) * Math.PI / 180
+      var ca = Math.cos(rad)
+      var sa = Math.sin(rad)
+      var halfDepth = w * 0.07
+      var focal = w * 3.6
 
-      function localPoint(p) {
-        return [(p[0] - originX) * scale, (p[1] - originY) * scale]
+      function rotateY(x, y, z) {
+        return [x * ca + z * sa, y, -x * sa + z * ca]
       }
 
-      function project(p) {
-        return [cx + p[0] * sx, cy + p[1]]
+      function project(v) {
+        var s = focal / Math.max(1, focal - v[2])
+        return [cx + v[0] * s, cy + v[1] * s]
       }
 
+      var front3 = []
+      var back3 = []
       var front = []
-      for (var i = 0; i < points.length; i++)
-        front.push(project(localPoint(points[i])))
-
       var back = []
-      for (var b = 0; b < front.length; b++) {
-        back.push([
-          cx + (front[b][0] - cx) * backScale + depth,
-          cy + (front[b][1] - cy) * backScale
-        ])
+      for (var i = 0; i < points.length; i++) {
+        var x = (points[i][0] - originX) * scale
+        var y = (points[i][1] - originY) * scale
+        var f3 = rotateY(x, y, halfDepth)
+        var b3 = rotateY(x, y, -halfDepth)
+        front3.push(f3)
+        back3.push(b3)
+        front.push(project(f3))
+        back.push(project(b3))
       }
 
       if (cursor.shadow) {
@@ -260,66 +260,106 @@ Item {
         ctx.fill()
       }
 
-      // Rear face. Every surface is opaque, so the cursor reads as a solid
-      // object from any angle.
-      ctx.beginPath()
-      ctx.moveTo(back[0][0], back[0][1])
-      for (var b2 = 1; b2 < back.length; b2++)
-        ctx.lineTo(back[b2][0], back[b2][1])
-      ctx.closePath()
-      ctx.fillStyle = Qt.darker(cursor.color, 2.15)
-      ctx.fill()
-      ctx.strokeStyle = Qt.darker(cursor.color, 2.15)
-      ctx.lineWidth = Math.max(0.8, w * 0.010)
-      ctx.stroke()
+      function averageZ(vertices) {
+        var total = 0
+        for (var v = 0; v < vertices.length; v++)
+          total += vertices[v][2]
+        return total / Math.max(1, vertices.length)
+      }
 
-      // Side walls: one quad per outline edge. The same-colour stroke seals
-      // the seam between the walls and the faces at small icon sizes.
-      ctx.fillStyle = Qt.darker(cursor.color, 1.70)
-      ctx.strokeStyle = Qt.darker(cursor.color, 1.70)
-      ctx.lineWidth = Math.max(0.8, w * 0.012)
+      function polyPath(vertices) {
+        ctx.beginPath()
+        ctx.moveTo(vertices[0][0], vertices[0][1])
+        for (var v = 1; v < vertices.length; v++)
+          ctx.lineTo(vertices[v][0], vertices[v][1])
+        ctx.closePath()
+      }
+
+      var faces = []
+      faces.push({ kind: "front", pts: front, z: averageZ(front3) })
+      faces.push({ kind: "back", pts: back, z: averageZ(back3) })
       for (var e = 0; e < front.length; e++) {
         var n = (e + 1) % front.length
-        ctx.beginPath()
-        ctx.moveTo(front[e][0], front[e][1])
-        ctx.lineTo(front[n][0], front[n][1])
-        ctx.lineTo(back[n][0], back[n][1])
-        ctx.lineTo(back[e][0], back[e][1])
-        ctx.closePath()
+        var dx = points[n][0] - points[e][0]
+        var dy = points[n][1] - points[e][1]
+        var len = Math.max(0.001, Math.hypot(dx, dy))
+        var nx = dy / len
+        var ny = -dx / len
+        faces.push({
+          kind: "side",
+          pts: [front[e], front[n], back[n], back[e]],
+          z: (front3[e][2] + front3[n][2] + back3[n][2] + back3[e][2]) / 4,
+          light: Math.max(-1, Math.min(1, nx * -0.45 + ny * -0.89))
+        })
+      }
+
+      // Opaque underlay of every face. It closes hairline seams between the
+      // sorted faces, so the body never shows the panel through a gap.
+      var underlay = Qt.darker(cursor.color, 1.55)
+      ctx.fillStyle = underlay
+      ctx.strokeStyle = underlay
+      ctx.lineWidth = Math.max(0.7, w * 0.008)
+      for (var u = 0; u < faces.length; u++) {
+        polyPath(faces[u].pts)
         ctx.fill()
         ctx.stroke()
       }
 
-      // A lighter far rim makes the extrusion read as a beveled end cap when
-      // the front face is close to edge-on.
-      ctx.beginPath()
-      ctx.moveTo(back[0][0], back[0][1])
-      for (var bo = 1; bo < back.length; bo++)
-        ctx.lineTo(back[bo][0], back[bo][1])
-      ctx.closePath()
-      ctx.strokeStyle = Qt.lighter(cursor.color, 1.24)
-      ctx.lineWidth = Math.max(1, w * 0.016)
-      ctx.stroke()
+      // Painter order by average depth keeps the near faces on top, including
+      // the back face once the cursor has turned past edge-on.
+      faces.sort(function(a, b) { return a.z - b.z })
 
-      // Front face, with a projected gradient so the light turns with it.
-      var first = front[Math.floor(front.length * 0.10)]
-      var last = front[Math.floor(front.length * 0.62)]
-      var face = ctx.createLinearGradient(first[0], first[1], last[0], last[1])
-      face.addColorStop(0, Qt.lighter(cursor.color, 1.38))
-      face.addColorStop(0.48, cursor.color)
-      face.addColorStop(1, Qt.darker(cursor.color, 1.42))
-      ctx.beginPath()
-      ctx.moveTo(front[0][0], front[0][1])
-      for (var f = 1; f < front.length; f++)
-        ctx.lineTo(front[f][0], front[f][1])
-      ctx.closePath()
-      ctx.fillStyle = face
-      ctx.fill()
+      var sideBase = Qt.darker(cursor.color, 1.45)
+      var backBase = Qt.darker(cursor.color, 1.78)
 
-      // Rounded leading rim. This is opaque, not a translucent specular pass.
-      ctx.strokeStyle = Qt.lighter(cursor.color, 1.34)
-      ctx.lineWidth = Math.max(1, w * 0.018)
-      ctx.stroke()
+      for (var f = 0; f < faces.length; f++) {
+        var face = faces[f]
+        polyPath(face.pts)
+
+        if (face.kind === "front") {
+          var first = front[Math.floor(front.length * 0.10)]
+          var last = front[Math.floor(front.length * 0.62)]
+          var faceGrad = ctx.createLinearGradient(
+            first[0], first[1], last[0], last[1])
+          faceGrad.addColorStop(0, Qt.lighter(cursor.color, 1.40))
+          faceGrad.addColorStop(0.48, cursor.color)
+          faceGrad.addColorStop(1, Qt.darker(cursor.color, 1.42))
+          ctx.fillStyle = faceGrad
+          ctx.fill()
+          ctx.strokeStyle = Qt.lighter(cursor.color, 1.32)
+          ctx.lineWidth = Math.max(1, w * 0.016)
+          ctx.stroke()
+        } else if (face.kind === "back") {
+          var bfirst = back[Math.floor(back.length * 0.10)]
+          var blast = back[Math.floor(back.length * 0.62)]
+          var backGrad = ctx.createLinearGradient(
+            bfirst[0], bfirst[1], blast[0], blast[1])
+          backGrad.addColorStop(0, Qt.darker(cursor.color, 1.50))
+          backGrad.addColorStop(1, Qt.darker(cursor.color, 1.95))
+          ctx.fillStyle = backGrad
+          ctx.fill()
+          ctx.strokeStyle = Qt.lighter(backBase, 1.24)
+          ctx.lineWidth = Math.max(1, w * 0.012)
+          ctx.stroke()
+        } else {
+          var sideColor = face.light >= 0
+            ? Qt.lighter(sideBase, 1 + 0.20 * face.light)
+            : Qt.darker(sideBase, 1 + 0.20 * (-face.light))
+          var fmidX = (face.pts[0][0] + face.pts[1][0]) / 2
+          var fmidY = (face.pts[0][1] + face.pts[1][1]) / 2
+          var bmidX = (face.pts[2][0] + face.pts[3][0]) / 2
+          var bmidY = (face.pts[2][1] + face.pts[3][1]) / 2
+          var sideGrad = ctx.createLinearGradient(fmidX, fmidY, bmidX, bmidY)
+          sideGrad.addColorStop(0, Qt.lighter(sideColor, 1.18))
+          sideGrad.addColorStop(0.45, sideColor)
+          sideGrad.addColorStop(1, Qt.darker(sideColor, 1.28))
+          ctx.fillStyle = sideGrad
+          ctx.strokeStyle = sideColor
+          ctx.lineWidth = Math.max(0.7, w * 0.008)
+          ctx.fill()
+          ctx.stroke()
+        }
+      }
     }
 
     Connections {
