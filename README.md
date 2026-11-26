@@ -354,8 +354,10 @@ coordinates).
 ### Choosing the device
 
 The **Device** dropdown lists every pointing device (a device with
-`REL_X`/`REL_Y` and buttons). Pick one and press **Use this device**: the choice
-is stored as `device.selected` and the daemon re-grabs it.
+`REL_X`/`REL_Y` and buttons). Pick one and the choice applies immediately:
+it is stored as `device.selected`, the daemon re-grabs it, and the panel closes
+so the next open starts clean. The refresh button sits in the same row as the
+selector.
 
 - Names come from udev (`ID_VENDOR` + `ID_MODEL`), from HID++ for a Logitech
   receiver, and fall back to the kernel name. Each label ends with the
@@ -366,8 +368,8 @@ is stored as `device.selected` and the daemon re-grabs it.
 - While `device.selected` is empty the daemon guesses: `device.match` (default
   `logitech`), then the first device that looks like a trackball, then the
   first pointer. This is only the initial guess.
-- Moving the dropdown does **not** apply the device: settings stay hidden
-  behind "Device not applied" until the daemon actually grabs it.
+- While the daemon is switching, the panel says **Switching device…** and
+  keeps settings hidden until the new device is active.
 - If the chosen device disappears the panel says so and keeps the picker; it
   never silently switches to another mouse.
 

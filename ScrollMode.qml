@@ -739,7 +739,7 @@ Ui.Panel {
       rows.push("autoExit")
       rows.push("autoExitHelp")
     } else if (root.tab === 2) {
-      rows = ["device", "useDevice", "rescan"]
+      rows = ["device", "rescan"]
       if (root.dpiInteractive) rows.push("dpiStages")
       if (root.dpiVisible && (root.dpiSource === "none"
           || root.dpiSource === "manual")) {
@@ -857,7 +857,6 @@ Ui.Panel {
     if (id === "autoExit") return autoExitRow
     if (id === "autoExitHelp") return autoExitHint
     if (id === "device") return devicePicker
-    if (id === "useDevice") return useButton
     if (id === "rescan") return refreshButton
     if (id === "dpiStages") return dpiGrid
     if (id === "dpiManual") return manualDpiSlider
@@ -900,8 +899,18 @@ Ui.Panel {
     index = (index + delta + options.length) % options.length
     root.pendingId = options[index].value
   }
-  function applyPendingDevice() {
-    if (root.pendingId !== root.activeId) root.useDevice(root.pendingId)
+  function applyDeviceSelection(value) {
+    root.pendingId = value
+    if (value === root.activeId) return
+    root.useDevice(value)
+    // Let the dropdown finish its own close before hiding the panel.
+    deviceCloseTimer.restart()
+  }
+
+  Timer {
+    id: deviceCloseTimer
+    interval: 80
+    onTriggered: root.close()
   }
   function adjustCursor(delta) {
     if (!root.cursorActive) {
@@ -922,7 +931,6 @@ Ui.Panel {
     else if (id === "inertiaCoast") root.nudgeSlider(inertiaCoastSlider, delta)
     else if (id === "holdThreshold") root.nudgeSlider(holdSlider, delta)
     else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], delta)
-    else if (id === "device") root.cyclePending(delta)
     else if (id === "dpiStages") root.moveDpiPreview(delta)
     else if (id === "dpiManual") root.nudgeSlider(manualDpiSlider, delta)
     else if (id === "batteryShowBar") root.setValue("battery.show_bar", !root.batteryShowBar)
@@ -950,7 +958,6 @@ Ui.Panel {
     else if (id === "holdThreshold") holdSlider.flash = true
     else if (id === "autoExit") root.cycleNumber("auto_exit_seconds", [0, 15, 30, 60], 1)
     else if (id === "device") devicePicker.open()
-    else if (id === "useDevice") root.applyPendingDevice()
     else if (id === "rescan") root.rescan()
     else if (id === "dpiStages") root.applyDpi(root.dpiPreviewValue)
     else if (id === "dpiManual") manualDpiSlider.flash = true
@@ -1456,32 +1463,21 @@ Ui.Panel {
             }
           }
 
-          Ui.Dropdown {
-            id: devicePicker
-            width: parent.width
-            height: Style.spacing.controlHeight
-            options: root.deviceOptions
-            value: root.pendingId
-            showLabel: false
-            onChanged: function(value) { root.pendingId = value }
-            onHovered: function(isHovered) { if (isHovered) root.setCursor("device") }
-            onPopupOpenChanged: {
-              if (!popupOpen && root.deviceOptionsPending) root.refreshDeviceOptions()
-            }
-          }
-
           Row {
             width: parent.width
             spacing: Style.space(6)
 
-            ActionButton {
-              id: useButton
+            Ui.Dropdown {
+              id: devicePicker
               width: parent.width - refreshButton.width - parent.spacing
               height: Style.spacing.controlHeight
-              idleText: strings.t("menu.useDevice")
-              onHovered: function(isHovered) { if (isHovered) root.setCursor("useDevice") }
-              onActivated: {
-                if (root.pendingId !== root.activeId) root.useDevice(root.pendingId)
+              options: root.deviceOptions
+              value: root.pendingId
+              showLabel: false
+              onChanged: function(value) { root.applyDeviceSelection(value) }
+              onHovered: function(isHovered) { if (isHovered) root.setCursor("device") }
+              onPopupOpenChanged: {
+                if (!popupOpen && root.deviceOptionsPending) root.refreshDeviceOptions()
               }
             }
 

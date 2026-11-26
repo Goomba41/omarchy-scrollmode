@@ -4,6 +4,17 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.11.4] — 2026-11-26
+
+### Changed
+
+- Picking a device now applies it in one step: the daemon grabs it and the
+  panel closes, so the device-picker layer ghost is never left on screen.
+  Reopen the panel for the new device's settings.
+- The refresh button now sits in the same row as the device selector.
+- The pending notice reads **Switching device…** while the daemon changes
+  devices.
+
 ## [1.11.3] — 2026-11-26
 
 ### Changed
