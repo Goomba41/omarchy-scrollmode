@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.9] — 2026-11-26
+
+### Changed
+
+- Replaced the fixed side yaw with a symmetrical front bevel: the outer
+  silhouette sits at mid-depth, the front face is inset and lifted, and the
+  full rear face closes the body. Both sides now show the same edge width at
+  rest, so the cursor no longer looks turned to one side.
+- Moved the tail closer to the centre of the silhouette and shifted the tip
+  left of centre, keeping a system-pointer shape without the tail reading as
+  an off-centre lump.
+- Face colours are all derived from the cursor colour and stay light: front,
+  bevel, side and rear differ only slightly. No gradients.
+
 ## [1.10.8] — 2026-11-26
 
 ### Changed
