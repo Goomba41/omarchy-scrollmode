@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [1.10.11] — 2026-11-26
+
+### Changed
+
+- Shortened the cursor tail and enlarged the main pointer body. The notch is
+  deeper now, so the tail reads as a distinct short leg instead of a long
+  diagonal bar.
+- The face colours, uniform bevel and mode-derived palette are unchanged.
+
 ## [1.10.10] — 2026-11-26
 
 ### Changed
